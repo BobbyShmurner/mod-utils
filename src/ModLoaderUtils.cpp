@@ -1,4 +1,4 @@
-#include "ModUtils.hpp"
+#include "ModloaderUtils.hpp"
 #include "JNIUtils.hpp"
 
 #include "main.hpp"
@@ -8,19 +8,21 @@
 
 Logger& getLogger();
 
-const char* ModUtils::m_ModPath;
-const char* ModUtils::m_LibPath;
-std::string ModUtils::m_GameVersion;
+bool ModloaderUtils::m_HasInitialized = false;
 
-std::list<std::string>* ModUtils::m_OddLibNames;
-std::list<std::string>* ModUtils::m_CoreMods;
-std::list<std::string>* ModUtils::m_LoadedMods;
+const char* ModloaderUtils::m_ModPath;
+const char* ModloaderUtils::m_LibPath;
+std::string ModloaderUtils::m_GameVersion;
 
-std::unordered_map<std::string, std::string>* ModUtils::m_ModVersions;
+std::list<std::string>* ModloaderUtils::m_OddLibNames;
+std::list<std::string>* ModloaderUtils::m_CoreMods;
+std::list<std::string>* ModloaderUtils::m_LoadedMods;
 
-JavaVM* ModUtils::m_Jvm;
+std::unordered_map<std::string, std::string>* ModloaderUtils::m_ModVersions;
 
-std::list<std::string> ModUtils::GetDirContents(std::string dirPath) {
+JavaVM* ModloaderUtils::m_Jvm;
+
+std::list<std::string> ModloaderUtils::GetDirContents(std::string dirPath) {
 	DIR* dir = opendir(dirPath.c_str());
 	dirent* dp;
 	std::list<std::string> files; 
@@ -36,7 +38,7 @@ std::list<std::string> ModUtils::GetDirContents(std::string dirPath) {
 	return files;
 }
 
-void ModUtils::SetModActive(std::string name, bool active) {
+void ModloaderUtils::SetModActive(std::string name, bool active) {
 	getLogger().info("%s mod \"%s\"", active ? "Enabling" : "Disabling", GetLibName(name).c_str());
 
 	std::string path;
@@ -56,7 +58,7 @@ void ModUtils::SetModActive(std::string name, bool active) {
 	}
 }
 
-void ModUtils::SetModsActive(std::list<std::string>* mods, bool active) {
+void ModloaderUtils::SetModsActive(std::list<std::string>* mods, bool active) {
 	getLogger().info("%s a list of mods", active ? "Enabling" : "Disabling");
 
 	for (std::string modFileName : *mods) {
@@ -64,11 +66,11 @@ void ModUtils::SetModsActive(std::list<std::string>* mods, bool active) {
 	}
 }
 
-void ModUtils::ToggleMod(std::string name) {
+void ModloaderUtils::ToggleMod(std::string name) {
 	SetModActive(name, IsDisabled(name));
 }
 
-void ModUtils::ToggleMods(std::list<std::string>* mods) {
+void ModloaderUtils::ToggleMods(std::list<std::string>* mods) {
 	getLogger().info("Toggling a list of mods");
 
 	for (std::string modFileName : *mods) {
@@ -76,25 +78,28 @@ void ModUtils::ToggleMods(std::list<std::string>* mods) {
 	}
 }
 
-bool ModUtils::IsDisabled(std::string name) {
+bool ModloaderUtils::IsDisabled(std::string name) {
 	std::string fileName = GetFileName(name);
 
 	return fileName.length() > 9 && !strcmp(fileName.substr(fileName.size() - 9).c_str(), ".disabled");
 }
 
-bool ModUtils::IsOddLibName(std::string name) {
+bool ModloaderUtils::IsOddLibName(std::string name) {
+	Init();
 	return (std::find(m_OddLibNames->begin(), m_OddLibNames->end(), name) != m_OddLibNames->end());
 }
 
-bool ModUtils::IsModLoaded(std::string name) {
+bool ModloaderUtils::IsModLoaded(std::string name) {
+	Init();
 	return (std::find(m_LoadedMods->begin(), m_LoadedMods->end(), GetFileName(name)) != m_LoadedMods->end());;
 }
 
-bool ModUtils::IsCoreMod(std::string name) {
+bool ModloaderUtils::IsCoreMod(std::string name) {
+	Init();
 	return (std::find(m_CoreMods->begin(), m_CoreMods->end(), GetFileName(name)) != m_CoreMods->end());
 }
 
-bool ModUtils::IsModALibrary(std::string name) {
+bool ModloaderUtils::IsModALibrary(std::string name) {
 	std::string fileName = GetFileName(name);
 	std::list<std::string> libFiles = GetDirContents(m_LibPath);
 
@@ -109,7 +114,7 @@ bool ModUtils::IsModALibrary(std::string name) {
 
 // Name Tests
 
-bool ModUtils::IsModID(std::string name) {
+bool ModloaderUtils::IsModID(std::string name) {
 	std::string fileName = GetFileName(name);
 	std::unordered_map<std::string, const Mod> mods = Modloader::getMods();
 
@@ -120,17 +125,17 @@ bool ModUtils::IsModID(std::string name) {
 	return false;
 }
 
-bool ModUtils::IsLibName(std::string name) {
+bool ModloaderUtils::IsLibName(std::string name) {
 	return ((!IsFileName(name)) && (name.length() > 3 && !strcmp(name.substr(0, 3).c_str(), "lib"))) || IsOddLibName(name);
 }
 
-bool ModUtils::IsFileName(std::string name) {
+bool ModloaderUtils::IsFileName(std::string name) {
 	return (name.length() > 9 && !strcmp(name.substr(name.size() - 9).c_str(), ".disabled")) || (name.length() > 3 && !strcmp(name.substr(name.size() - 3).c_str(), ".so"));
 }
 
 // Name Conversions
 
-std::string ModUtils::GetModID(std::string name) {
+std::string ModloaderUtils::GetModID(std::string name) {
 	std::string fileName = GetFileName(name);
 	std::unordered_map<std::string, const Mod> mods = Modloader::getMods();
 	
@@ -141,7 +146,7 @@ std::string ModUtils::GetModID(std::string name) {
 	return GetLibName(name);
 }
 
-std::string ModUtils::GetLibName(std::string name) {
+std::string ModloaderUtils::GetLibName(std::string name) {
 	if (IsLibName(name)) return name;
 
 	std::string fileName;
@@ -156,7 +161,7 @@ std::string ModUtils::GetLibName(std::string name) {
 	else return fileName.substr(0, fileName.size() - 3);
 }
 
-std::string ModUtils::GetFileName(std::string name) {
+std::string ModloaderUtils::GetFileName(std::string name) {
 	if (IsFileName(name)) return name;
 	std::string libName;
 
@@ -166,27 +171,32 @@ std::string ModUtils::GetFileName(std::string name) {
 	return GetFileNameFromDir(libName);
 }
 
-std::string ModUtils::GetModVersion(std::string name) {
+std::string ModloaderUtils::GetModVersion(std::string name) {
+	Init();
+
 	std::string fileName = GetFileName(name);
 	if (m_ModVersions->find(fileName) == m_ModVersions->end()) return "Unknown";
 
 	return m_ModVersions->at(fileName);
 }
 
-std::list<std::string> ModUtils::GetLoadedModsFileNames() {
+std::list<std::string> ModloaderUtils::GetLoadedModsFileNames() {
+	Init();
 	return *m_LoadedMods;
 }
 
-std::list<std::string> ModUtils::GetCoreMods() {
+std::list<std::string> ModloaderUtils::GetCoreMods() {
+	Init();
 	return *m_CoreMods;
 }
 
-std::list<std::string> ModUtils::GetOddLibNames() {
+std::list<std::string> ModloaderUtils::GetOddLibNames() {
+	Init();
 	return *m_OddLibNames;
 }
 
 // Thanks for Laurie for the original code snippet: 
-std::optional<std::string> ModUtils::GetModError(std::string name) {
+std::optional<std::string> ModloaderUtils::GetModError(std::string name) {
 	std::string fileName = GetFileName(name);
 	std::string filePath = Modloader::getDestinationPath() + fileName;
 	
@@ -197,19 +207,19 @@ std::optional<std::string> ModUtils::GetModError(std::string name) {
 	return error ? std::optional(std::string(error).substr(15)) : std::nullopt;
 }
 
-std::string ModUtils::GetModsFolder() {
+std::string ModloaderUtils::GetModsFolder() {
 	return m_ModPath;
 }
 
-std::string ModUtils::GetLibsFolder() {
+std::string ModloaderUtils::GetLibsFolder() {
 	return m_LibPath;
 }
 
-std::string ModUtils::GetGameVersion() {
+std::string ModloaderUtils::GetGameVersion() {
 	return m_GameVersion;
 }
 
-JNIEnv* ModUtils::GetJNIEnv() {
+JNIEnv* ModloaderUtils::GetJNIEnv() {
 	JNIEnv* env;
 
 	JavaVMAttachArgs args;
@@ -222,7 +232,7 @@ JNIEnv* ModUtils::GetJNIEnv() {
 	return env;
 }
 
-void ModUtils::RestartBS() {
+void ModloaderUtils::RestartBS() {
 	getLogger().info("-- STARTING RESTART --");
 
 	JNIEnv* env = GetJNIEnv();
@@ -240,14 +250,11 @@ void ModUtils::RestartBS() {
 	GET_JCLASS(env, unityPlayerClass, "com/unity3d/player/UnityPlayer", jclass);
 
 	GET_STATIC_JFIELD(env, appActivity, unityPlayerClass, "currentActivity", "Landroid/app/Activity;", jobject);
-	GET_JCLASS(env, activityClass, "android/app/Activity", jclass);
 
 	// Get Package Manager
 	CALL_JOBJECT_METHOD(env, packageManager, appActivity, "getPackageManager", "()Landroid/content/pm/PackageManager;", jobject);
-	GET_JOBJECT_JCLASS(env, packageManagerClass, packageManager, jclass);
 
 	// Get Intent
-	GET_JCLASS(env, intentClass, "android/content/Intent", jclass);
 	CALL_JOBJECT_METHOD(env, intent, packageManager, "getLaunchIntentForPackage", "(Ljava/lang/String;)Landroid/content/Intent;", jobject, packageName);
 
 	// Set Intent Flags
@@ -257,6 +264,7 @@ void ModUtils::RestartBS() {
 	CALL_JOBJECT_METHOD(env, componentName, intent, "getComponent", "()Landroid/content/ComponentName;", jobject);
 
 	// Create Restart Intent
+	GET_JCLASS(env, intentClass, "android/content/Intent", jclass);
 	CALL_STATIC_JOBJECT_METHOD(env, restartIntent, intentClass, "makeRestartActivityTask", "(Landroid/content/ComponentName;)Landroid/content/Intent;", jobject, componentName);
 
 	// Restart Game
@@ -264,11 +272,21 @@ void ModUtils::RestartBS() {
 
 	GET_JCLASS(env, processClass, "android/os/Process", jclass);
 
+	env->DeleteLocalRef(packageName);
+	env->DeleteLocalRef(unityPlayerClass);
+	env->DeleteLocalRef(appActivity);
+	env->DeleteLocalRef(packageManager);
+	env->DeleteLocalRef(intent);
+	env->DeleteLocalRef(setFlagsSuccess);
+	env->DeleteLocalRef(componentName);
+	env->DeleteLocalRef(intentClass);
+	env->DeleteLocalRef(restartIntent);
+
 	CALL_STATIC_JINT_METHOD(env, pid, processClass, "myPid", "()I", jint);
 	CALL_STATIC_VOID_METHOD(env, processClass, killProcess, "(I)V", pid);
 }
 
-bool ModUtils::RemoveDuplicateMods() {
+bool ModloaderUtils::RemoveDuplicateMods() {
 	std::list<std::string> modFileNames = GetDirContents(m_ModPath);
 	std::list<std::string> libFileNames = GetDirContents(m_LibPath);
 
@@ -295,12 +313,12 @@ bool ModUtils::RemoveDuplicateMods() {
 	return removedDuplicate;
 }
 
-void ModUtils::CacheJVM() {
+void ModloaderUtils::CacheJVM() {
 	JNIEnv* env = Modloader::getJni();
 	env->GetJavaVM(&m_Jvm);
 }
 
-void ModUtils::CollectCoreMods() {
+void ModloaderUtils::CollectCoreMods() {
 	std::ifstream coreModsFile("/sdcard/BMBFData/core-mods.json");
 	std::stringstream coreModsSS;
 	coreModsSS << coreModsFile.rdbuf();
@@ -329,7 +347,7 @@ void ModUtils::CollectCoreMods() {
 	getLogger().info("Finished Collecting Core Mods!");
 }
 
-void ModUtils::CollectLoadedMods() {
+void ModloaderUtils::CollectLoadedMods() {
 	for (std::pair<std::string, const Mod> modPair : Modloader::getMods()) {
 		m_LoadedMods->emplace_front(modPair.second.name);
 	}
@@ -340,13 +358,13 @@ void ModUtils::CollectLoadedMods() {
 	}
 }
 
-void ModUtils::CollectModVersions() {
+void ModloaderUtils::CollectModVersions() {
 	for (std::pair<std::string, const Mod> modPair : Modloader::getMods()) {
 		m_ModVersions->emplace(modPair.second.name, modPair.second.info.version);
 	}
 }
 
-void ModUtils::CollectOddLibs() {
+void ModloaderUtils::CollectOddLibs() {
 	m_OddLibNames->clear();
 	std::list<std::string> modFileNames = GetDirContents(m_ModPath);
 	std::list<std::string> libFileNames = GetDirContents(m_LibPath);
@@ -366,34 +384,39 @@ void ModUtils::CollectOddLibs() {
 	}
 }
 
-void ModUtils::CollectGameVersion() {
-	getLogger().info("Collecting Game Version...");
+void ModloaderUtils::CollectGameVersion() {
+	LOG_JNI("Collecting Game Version...");
 	JNIEnv* env = GetJNIEnv();
 
 	jstring packageName = env->NewStringUTF("com.beatgames.beatsaber");
 
 	GET_JCLASS(env, unityPlayerClass, "com/unity3d/player/UnityPlayer", jclass);
-
 	GET_STATIC_JFIELD(env, appActivity, unityPlayerClass, "currentActivity", "Landroid/app/Activity;", jobject);
-	GET_JCLASS(env, activityClass, "android/app/Activity", jclass);
 
-	// Get Package Manager
 	CALL_JOBJECT_METHOD(env, packageManager, appActivity, "getPackageManager", "()Landroid/content/pm/PackageManager;", jobject);
-	GET_JOBJECT_JCLASS(env, packageManagerClass, packageManager, jclass);
 
-	// Get Package Info
 	CALL_JOBJECT_METHOD(env, packageInfo, packageManager, "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;", jobject, packageName, 0);
 	GET_JOBJECT_JCLASS(env, packageInfoClass, packageInfo, jclass);
 	
-	GET_JSTRING_JFIELD(env, versionName, packageInfo, packageInfoClass, "versionName", "Ljava/lang/String;", jstring)
+	GET_JSTRING_JFIELD(env, versionName, packageInfo, packageInfoClass, "versionName", "Ljava/lang/String;", jstring);
 
 	jboolean isCopy = true;
 	m_GameVersion = std::string(env->GetStringUTFChars(versionName, &isCopy));
 
-	getLogger().info("Got Game Version \"%s\"!", m_GameVersion.c_str());
+	LOG_JNI("Got Game Version \"%s\"!", m_GameVersion.c_str());
+
+	LOG_JNI("Cleaning Up!");
+	
+	env->DeleteLocalRef(packageName);
+	env->DeleteLocalRef(unityPlayerClass);
+	env->DeleteLocalRef(appActivity);
+	env->DeleteLocalRef(packageManager);
+	env->DeleteLocalRef(packageInfo);
+	env->DeleteLocalRef(packageInfoClass);
+	env->DeleteLocalRef(versionName);
 }
 
-std::string ModUtils::GetFileNameFromDir(std::string libName, bool guessLibName) {
+std::string ModloaderUtils::GetFileNameFromDir(std::string libName, bool guessLibName) {
 	std::list<std::string> modFileNames = GetDirContents(m_ModPath);
 	std::list<std::string> libFileNames = GetDirContents(m_LibPath);
 
@@ -414,21 +437,16 @@ std::string ModUtils::GetFileNameFromDir(std::string libName, bool guessLibName)
 	return {"Null"};
 }
 
-std::string ModUtils::GetFileNameFromModID(std::string modID) {
+std::string ModloaderUtils::GetFileNameFromModID(std::string modID) {
 	if (!Modloader::getMods().contains(modID)) return {"Null"};
 
 	return Modloader::getMods().at(modID).name;
 }
 
-void ModUtils::Init() {
-	m_CoreMods = new std::list<std::string>();
-	m_OddLibNames = new std::list<std::string>();
-	m_LoadedMods = new std::list<std::string>();
-	m_ModVersions = new std::unordered_map<std::string, std::string>();
+void ModloaderUtils::Init() {
+	if (m_HasInitialized) return;
+	m_HasInitialized = true;
 
-	m_ModPath = "/sdcard/Android/data/com.beatgames.beatsaber/files/mods/";
-	m_LibPath = "/sdcard/Android/data/com.beatgames.beatsaber/files/libs/";
-	
 	CollectGameVersion();
 	CollectLoadedMods();
 	CollectModVersions();
@@ -436,10 +454,20 @@ void ModUtils::Init() {
 	CollectCoreMods();
 }
 
-void __attribute__((constructor)) ModUtils::OnDlopen() {
-	__android_log_print(ANDROID_LOG_VERBOSE, "mod-utils [JNI]", "Getting m_Jvm...");
+void __attribute__((constructor)) ModloaderUtils::OnDlopen() {
+	__android_log_print(ANDROID_LOG_VERBOSE, "modloader-utils [JNI]", "Getting m_Jvm...");
 	CacheJVM();
 
-	if (m_Jvm != nullptr) __android_log_print(ANDROID_LOG_VERBOSE, "mod-utils [JNI]", "Successfully cached m_Jvm!");
-	else __android_log_print(ANDROID_LOG_ERROR, "mod-utils [JNI]", "Failed to cache m_Jvm, m_Jvm is a nullptr!");
+	if (m_Jvm != nullptr) __android_log_print(ANDROID_LOG_VERBOSE, "modloader-utils [JNI]", "Successfully cached m_Jvm!");
+	else __android_log_print(ANDROID_LOG_ERROR, "modloader-utils [JNI]", "Failed to cache m_Jvm, m_Jvm is a nullptr!");
+
+	// Setting Up These variables here, because they can be referenced before Init
+
+	m_CoreMods = new std::list<std::string>();
+	m_OddLibNames = new std::list<std::string>();
+	m_LoadedMods = new std::list<std::string>();
+	m_ModVersions = new std::unordered_map<std::string, std::string>();
+
+	m_ModPath = "/sdcard/Android/data/com.beatgames.beatsaber/files/mods/";
+	m_LibPath = "/sdcard/Android/data/com.beatgames.beatsaber/files/libs/";
 }

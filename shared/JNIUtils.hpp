@@ -10,11 +10,11 @@
 // Log Function
 
 #define LOG_JNI_TEST(objectToTest, success, fail) \
-if (objectToTest == nullptr) { __android_log_print(ANDROID_LOG_ERROR, "mod-utils [JNI]", fail, ""#objectToTest); } \
-else { __android_log_print(ANDROID_LOG_VERBOSE, "mod-utils [JNI]", success, ""#objectToTest); }
+if (objectToTest == nullptr) { __android_log_print(ANDROID_LOG_ERROR, "modloader-utils [JNI]", fail, ""#objectToTest); } \
+else { __android_log_print(ANDROID_LOG_VERBOSE, "modloader-utils [JNI]", success, ""#objectToTest); }
 
 #define LOG_JNI(message, ...) \
-__android_log_print(ANDROID_LOG_ERROR, "mod-utils [JNI]", message __VA_OPT__(,) __VA_ARGS__)
+__android_log_print(ANDROID_LOG_ERROR, "modloader-utils [JNI]", message __VA_OPT__(,) __VA_ARGS__)
 
 // Get Class
 
@@ -30,68 +30,84 @@ LOG_JNI_TEST(className, "Got Object \"%s\"", "Failed To Get Object \"%s\"")
 
 #define NEW_JOBJECT(env, objectName, clazz, sig, type, ...) \
 jmethodID GET_JMETHODID(env, objectName##_MethodID, clazz, "<init>", sig); \
-type objectName = CALL_METHOD_FROM_JMETHODID(env, objectName, clazz, NewObject, objectName##_MethodID, __VA_ARGS__ )
+type objectName = CALL_METHOD_FROM_JMETHODID(env, objectName, clazz, NewObject, objectName##_MethodID, __VA_ARGS__ ); \
+env->DeleteLocalRef((jobject)objectName##_MethodID)
 
 // Call Void Method
 
 #define CALL_VOID_METHOD(env, object, methodName, sig, ...) \
 GET_JOBJECT_JCLASS(env, methodName##_Class, object, jclass); \
 jmethodID GET_JMETHODID(env, methodName##_MethodID, methodName##_Class, ""#methodName, sig); \
-CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, object, CallVoidMethod, methodName##_MethodID, __VA_ARGS__ )
+CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, object, CallVoidMethod, methodName##_MethodID, __VA_ARGS__ ); \
+env->DeleteLocalRef((jobject)methodName##_MethodID); \
+env->DeleteLocalRef(methodName##_Class)
 
 #define CALL_STATIC_VOID_METHOD(env, clazz, methodName, sig, ...) \
 jmethodID GET_STATIC_JMETHODID(env, methodName##_MethodID, clazz, ""#methodName, sig); \
-CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, clazz, CallStaticVoidMethod, methodName##_MethodID, __VA_ARGS__ )
+CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, clazz, CallStaticVoidMethod, methodName##_MethodID, __VA_ARGS__ ); \
+env->DeleteLocalRef((jobject)methodName##_MethodID)
 
 // Call Object Method
 
 #define CALL_JOBJECT_METHOD(env, objectName, object, methodName, sig, type, ...) \
 GET_JOBJECT_JCLASS(env, objectName##_Class, object, jclass); \
 jmethodID GET_JMETHODID(env, objectName##_MethodID, objectName##_Class, methodName, sig); \
-type objectName = CALL_METHOD_FROM_JMETHODID(env, objectName, object, CallObjectMethod, objectName##_MethodID, __VA_ARGS__ )
+type objectName = CALL_METHOD_FROM_JMETHODID(env, objectName, object, CallObjectMethod, objectName##_MethodID, __VA_ARGS__ ); \
+env->DeleteLocalRef((jobject)objectName##_MethodID); \
+env->DeleteLocalRef(objectName##_Class)
 
 #define CALL_STATIC_JOBJECT_METHOD(env, objectName, clazz, methodName, sig, type, ...) \
 jmethodID GET_STATIC_JMETHODID(env, objectName##_MethodID, clazz, methodName, sig); \
-type objectName = CALL_METHOD_FROM_JMETHODID(env, objectName, clazz, CallStaticObjectMethod, objectName##_MethodID, __VA_ARGS__ )
+type objectName = CALL_METHOD_FROM_JMETHODID(env, objectName, clazz, CallStaticObjectMethod, objectName##_MethodID, __VA_ARGS__ ); \
+env->DeleteLocalRef((jobject)objectName##_MethodID)
 
 // Call String Method
 
 #define CALL_JSTRING_METHOD(env, stringName, object, methodName, sig, type, ...) \
 GET_JOBJECT_JCLASS(env, objectName##_Class, object, jclass); \
 jmethodID GET_JMETHODID(env, stringName##_MethodID, objectName##_Class, methodName, sig); \
-type stringName = (jstring)CALL_METHOD_FROM_JMETHODID(env, stringName, object, CallObjectMethod, stringName##_MethodID, __VA_ARGS__ )
+type stringName = (jstring)CALL_METHOD_FROM_JMETHODID(env, stringName, object, CallObjectMethod, stringName##_MethodID, __VA_ARGS__ ); \
+env->DeleteLocalRef((jobject)objectName##_MethodID); \
+env->DeleteLocalRef(stringName##_Class)
 
 #define CALL_STATIC_JSTRING_METHOD(env, stringName, clazz, methodName, sig, type, ...) \
 jmethodID GET_STATIC_JMETHODID(env, stringName##_MethodID, clazz, methodName, sig); \
-type stringName = (jstring)CALL_METHOD_FROM_JMETHODID(env, stringName, clazz, CallStaticObjectMethod, stringName##_MethodID, __VA_ARGS__ )
+type stringName = (jstring)CALL_METHOD_FROM_JMETHODID(env, stringName, clazz, CallStaticObjectMethod, stringName##_MethodID, __VA_ARGS__ ); \
+env->DeleteLocalRef((jobject)stringName##_MethodID)
 
 // Call Long Method
 
 #define CALL_JLONG_METHOD(env, longName, object, methodName, sig, type, ...) \
 GET_JOBJECT_JCLASS(env, objectName##_Class, object, jclass); \
 jmethodID GET_JMETHODID(env, longName##_MethodID, objectName##_Class, methodName, sig); \
-type longName = CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, object, CallLongMethod, longName##_MethodID, __VA_ARGS__ )
+type longName = CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, object, CallLongMethod, longName##_MethodID, __VA_ARGS__ ); \
+env->DeleteLocalRef((jobject)longName##_MethodID); \
+env->DeleteLocalRef(objectName##_Class)
 
 #define CALL_STATIC_JLONG_METHOD(env, longName, clazz, methodName, sig, type, ...) \
 jmethodID GET_STATIC_JMETHODID(env, longName##_MethodID, clazz, methodName, sig); \
-type longName = CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, clazz, CallStaticLongMethod, longName##_MethodID, __VA_ARGS__ )
+type longName = CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, clazz, CallStaticLongMethod, longName##_MethodID, __VA_ARGS__ ); \
+env->DeleteLocalRef((jobject)longName##_MethodID)
 
 // Call Int Method
 
 #define CALL_JINT_METHOD(env, intName, object, methodName, sig, type, ...) \
 GET_JOBJECT_JCLASS(env, objectName##_Class, object, jclass); \
 jmethodID GET_JMETHODID(env, intName##_MethodID, objectName##_Class, methodName, sig); \
-type intName = CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, object, CallIntMethod, intName##_MethodID, __VA_ARGS__ )
+type intName = CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, object, CallIntMethod, intName##_MethodID, __VA_ARGS__ ); \
+env->DeleteLocalRef((jobject)intName##_MethodID); \
+env->DeleteLocalRef(objectName##_Class)
 
 #define CALL_STATIC_JINT_METHOD(env, intName, clazz, methodName, sig, type, ...) \
 jmethodID GET_STATIC_JMETHODID(env, intName##_MethodID, clazz, methodName, sig); \
-type intName = CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, clazz, CallStaticIntMethod, intName##_MethodID, __VA_ARGS__ )
+type intName = CALL_METHOD_FROM_JMETHODID_WITHOUT_LOG(env, clazz, CallStaticIntMethod, intName##_MethodID, __VA_ARGS__ ); \
+env->DeleteLocalRef((jobject)intName##_MethodID)
 
 // Get MethodID
 
 #define GET_JMETHODID(env, methodIDName, clazz, methodName, sig) \
 methodIDName = env->GetMethodID(clazz, methodName, sig); \
-LOG_JNI_TEST(methodIDName, "Got MethodID \"%s\"", "Failed To Get MethodID \"%s\"")
+LOG_JNI_TEST(methodIDName, "Got MethodID \"%s\"", "Failed To Get MethodID \"%s\"");
 
 #define GET_STATIC_JMETHODID(env, methodIDName, clazz, methodName, sig) \
 methodIDName = env->GetStaticMethodID(clazz, methodName, sig); \
@@ -110,21 +126,25 @@ env->method(object, methodID __VA_OPT__(,) __VA_ARGS__)
 
 #define GET_JFIELD(env, objectName, object, clazz, fieldName, sig, type) \
 jfieldID GET_JFIELDID(env, objectName##_FieldID, clazz, fieldName, sig); \
-type objectName = GET_JFIELD_FROM_JFIELDID(env, objectName, object, objectName##_FieldID)
+type objectName = GET_JFIELD_FROM_JFIELDID(env, objectName, object, objectName##_FieldID); \
+env->DeleteLocalRef((jobject)objectName##_FieldID)
 
 #define GET_STATIC_JFIELD(env, objectName, clazz, fieldName, sig, type) \
 jfieldID GET_STATIC_JFIELDID(env, objectName##_FieldID, clazz, fieldName, sig); \
-type objectName = GET_STATIC_JFIELD_FROM_JFIELDID(env, objectName, clazz, objectName##_FieldID)
+type objectName = GET_STATIC_JFIELD_FROM_JFIELDID(env, objectName, clazz, objectName##_FieldID); \
+env->DeleteLocalRef((jobject)objectName##_FieldID)
 
 // Get JString Field
 
 #define GET_JSTRING_JFIELD(env, objectName, object, clazz, fieldName, sig, type) \
 jfieldID GET_JFIELDID(env, objectName##_FieldID, clazz, fieldName, sig); \
-type objectName = (jstring)GET_JFIELD_FROM_JFIELDID(env, objectName, object, objectName##_FieldID)
+type objectName = (jstring)GET_JFIELD_FROM_JFIELDID(env, objectName, object, objectName##_FieldID); \
+env->DeleteLocalRef((jobject)objectName##_FieldID)
 
 #define GET_STATIC_JSTRING_JFIELD(env, objectName, clazz, fieldName, sig, type) \
 jfieldID GET_STATIC_JFIELDID(env, objectName##_FieldID, clazz, fieldName, sig); \
-type objectName = (jstring)GET_STATIC_JFIELD_FROM_JFIELDID(env, objectName, clazz, objectName##_FieldID)
+type objectName = (jstring)GET_STATIC_JFIELD_FROM_JFIELDID(env, objectName, clazz, objectName##_FieldID); \
+env->DeleteLocalRef((jobject)objectName##_FieldID)
 
 // Get FieldID
 

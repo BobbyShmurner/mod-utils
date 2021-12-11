@@ -1,5 +1,5 @@
 #include "main.hpp"
-#include "ModUtils.hpp"
+#include "ModloaderUtils.hpp"
 
 static ModInfo modInfo; // Stores the ID and version of our mod, and is sent to the modloader upon startup
 
@@ -24,10 +24,4 @@ extern "C" void setup(ModInfo& info) {
 	
     getConfig().Load(); // Load the config file
     getLogger().info("Completed setup!");
-}
-
-// Called later on in the game loading - a good time to install function hooks
-extern "C" void load() {
-    il2cpp_functions::Init();
-    ModUtils::Init();
 }

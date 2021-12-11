@@ -26,7 +26,7 @@ if ($args[0] -eq "--file") {
 }
 if ($args[0] -eq "--self") {
     echo "Logging only this mod!"
-    adb logcat -T "$timestamp" --pid $bspid | Select-String -pattern "(mod-utils|AndroidRuntime)"
+    adb logcat -T "$timestamp" --pid $bspid | Select-String -pattern "(modloader-utils|AndroidRuntime)"
 }
 if ($args[0] -eq "--custom") {
     $pattern = "(" + $args[1] + "|AndriodRuntime)"

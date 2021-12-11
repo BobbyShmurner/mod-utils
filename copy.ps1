@@ -1,6 +1,6 @@
 & $PSScriptRoot/build.ps1
 if ($?) {
-    adb push libs/arm64-v8a/libmod-utils.so /sdcard/Android/data/com.beatgames.beatsaber/files/libs/libmod-utils.so
+    adb push libs/arm64-v8a/libmodloader-utils.so /sdcard/Android/data/com.beatgames.beatsaber/files/libs/libmodloader-utils.so
     if ($?) {
         & $PSScriptRoot/restart-game.ps1
         if ($args[0] -eq "--log") {

@@ -5,7 +5,7 @@
 #include <jni.h>
 #include <unordered_map>
 
-class ModUtils {
+class ModloaderUtils {
 public:
 	/**
 	 * @brief Get all the files that are contained in a specified directory
@@ -230,9 +230,9 @@ public:
 	 * @return Returns true if a duplicate mod was found
 	 */
 	static bool RemoveDuplicateMods();
-
-	static void Init();
 private:
+	static bool m_HasInitialized;
+
 	static const char* m_ModPath;
 	static const char* m_LibPath;
 	static std::string m_GameVersion;
@@ -244,6 +244,8 @@ private:
 	static std::list<std::string>* m_LoadedMods;
 
 	static std::unordered_map<std::string, std::string>* m_ModVersions;
+
+	static void Init();
 
 	static void CollectCoreMods();
 	static void CollectLoadedMods();

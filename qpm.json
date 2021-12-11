@@ -2,8 +2,8 @@
   "sharedDir": "shared",
   "dependenciesDir": "extern",
   "info": {
-    "name": "ModUtils",
-    "id": "mod-utils",
+    "name": "ModloaderUtils",
+    "id": "modloader-utils",
     "version": "1.0.0",
     "url": null,
     "additionalData": {}

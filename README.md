@@ -1,4 +1,4 @@
-# ModUtils
+# ModloaderUtils
 
 Useful Utils to help with enabling and disabling mods, along with some other things!
 

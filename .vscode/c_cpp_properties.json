@@ -2,7 +2,7 @@
   "configurations": [
     {
       "defines": [
-        "ID=\"mod-utils\"",
+        "ID=\"modloader-utils\"",
         "VERSION=\"1.0.0\"",
         "__GNUC__",
         "__aarch64__"
