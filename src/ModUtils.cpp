@@ -437,7 +437,7 @@ void ModUtils::Init() {
 }
 
 void __attribute__((constructor)) ModUtils::OnDlopen() {
-	__android_log_print(ANDROID_LOG_VERBOSE, "HotSwappableMods", "Getting m_Jvm...");
+	__android_log_print(ANDROID_LOG_VERBOSE, "mod-utils [JNI]", "Getting m_Jvm...");
 	CacheJVM();
 
 	if (m_Jvm != nullptr) __android_log_print(ANDROID_LOG_VERBOSE, "mod-utils [JNI]", "Successfully cached m_Jvm!");
