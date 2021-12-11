@@ -5,7 +5,7 @@
     "name": "ModloaderUtils",
     "id": "modloader-utils",
     "version": "1.0.0",
-    "url": null,
+    "url": "https://github.com/BobbyShmurner/modloader-utils/",
     "additionalData": {}
   },
   "dependencies": [
