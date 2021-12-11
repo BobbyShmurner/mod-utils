@@ -98,7 +98,7 @@ jobs:
     - name: Commit Edit Version
       run: |
         git rm --cached ./Android.mk qpm.json
-        git add ./Android.mk qpm.json
+        git add -f ./Android.mk qpm.json
         git commit -m "Update Version and post restore"
     # Then, we want to use the commit we have just made, and force push our tag to that commit
     - name: Get Commit ID
