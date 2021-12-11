@@ -1,31 +1,12 @@
-{
-  "sharedDir": "shared",
-  "dependenciesDir": "extern",
-  "info": {
-    "name": "ModloaderUtils",
-    "id": "modloader-utils",
-    "version": "1.0.0",
-    "url": "https://github.com/BobbyShmurner/modloader-utils/",
-    "additionalData": {
-      "headersOnly": true,
-      "overrideSoName": "libmodloader-utils.so"
-    }
-  },
-  "dependencies": [
-    {
-      "id": "beatsaber-hook",
-      "versionRange": "2.3.2",
-      "additionalData": {
-        "extraFiles": [
-          "src/inline-hook"
-        ]
-      }
-    },
-    {
-      "id": "modloader",
-      "versionRange": "*",
-      "additionalData": {}
-    }
-  ],
-  "additionalData": {}
-}
+nh0igvje  r0hnj-4w3bh
+  =0rGT4RHG5  QUOGHREGPIOQWNib nION B]VÁGB 
+  trjhntehnrfhre
+  aHJN
+  [Jhnre
+  H]tehbtehytjshjkw
+  yrpojhn
+  owro
+  e 
+  Orgo
+  [JRG
+  ]
