@@ -51,3 +51,7 @@ extern/
 Android.mk.backup
 qpm.shared.json
 logcat.log
+
+# QPM Stoof
+QPM/
+QPM_Temp/
