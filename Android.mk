@@ -26,8 +26,8 @@ LOCAL_SRC_FILES := extern/libmodloader.so
 include $(PREBUILT_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := modloader-utils
-LOCAL_SRC_FILES += $(call rwildcard,src/,*.cpp)
+LOCAL_MODULE := modloader-utils_1_0_2
+LOCAL_SRC_FILES := $(call rwildcard,src/,*.cpp)
 LOCAL_SHARED_LIBRARIES += modloader
 LOCAL_LDLIBS += -llog
 LOCAL_CFLAGS += -I'extern/libil2cpp/il2cpp/libil2cpp' -DID='"modloader-utils"' -DVERSION='"1.0.2"' -I'./shared' -I'./extern' -isystem'extern/codegen/include'
