@@ -1,3 +1,4 @@
+# File Originally taken from Qosmetics API: https://github.com/RedBrumbler/QosmeticsAPI/blob/master/.github/workflows/publish.yml
 name: Publish QPM Package
 
 on:
@@ -7,8 +8,6 @@ on:
 
 jobs:
   publish:
-    env:
-      module_id: modloader-utils
     runs-on: ubuntu-latest
     
     steps:
@@ -20,14 +19,31 @@ jobs:
     - name: Install Powershell
       run: sudo apt-get install -y powershell
     
-    - name: Setup NDK
-      id: setup-ndk
-      uses: nttld/setup-ndk@v1.0.3
+    - name: Cache Android NDK
+      id: cache-ndk
+      uses: actions/cache@v2
+      env:
+        cache-name: cache-ndk
+        ndkname: android-ndk-r22
       with:
-        ndk-version: r22
+        path: ndk
+        key: ${{ runner.os }}-${{ env.cache-name }}-${{ env.ndkname }}
+        restore-keys: |
+          ${{ runner.os }}-${{ env.cache-name }}-${{ env.ndkname }}
+      
+    - name: Install Android NDK
+      if: steps.cache-ndk.outputs.cache-hit != 'true'
+      env:
+        ndkname: android-ndk-r22
+      run: |
+        wget -q -O ndk.zip https://dl.google.com/android/repository/${ndkname}-linux-x86_64.zip
+        unzip -q ndk.zip
+        mv ${ndkname} ndk
       
     - name: Create ndkpath.txt
-      run: echo ${{ steps.setup-ndk.outputs.ndk-path }} > ${GITHUB_WORKSPACE}/ndkpath.txt
+      run: |
+        cd ndk
+        pwd > ${GITHUB_WORKSPACE}/ndkpath.txt
         
 #     - name: Cache QPM
 #       id: cache-qpm
@@ -49,12 +65,7 @@ jobs:
         name: QPM-ubuntu-x64
         path: QPM
         repo: sc2ad/QuestPackageManager
-      
-    - name: QPM Collect
-      run: |
-        chmod +x ./QPM/QPM
-        ./QPM/QPM collect
-    
+
     - name: QPM Dependencies Cache
       id: cache-qpm-deps
       uses: actions/cache@v2
@@ -67,14 +78,11 @@ jobs:
           ${{ runner.os }}-build-${{ env.cache-name }}-
           ${{ runner.os }}-build-
           ${{ runner.os }}-
-      
     - name: QPM Restore
 #       if: steps.cache-qpm-deps.outputs.cache-hit != 'true'
-      run: ./QPM/QPM restore
-    - name: List Post Restore
       run: |
-        ls -la ${GITHUB_WORKSPACE}/extern/
-        ls -la QPM_Temp
+        chmod +x ./QPM/QPM
+        ./QPM/QPM restore
         
     - name: Get Tag Version
       id: get_tag_version
@@ -100,7 +108,7 @@ jobs:
     - name: Commit Edit Version
       run: |
         git add ./Android.mk qpm.json
-        git commit -m "Update Version and post restore"
+        git commit -m "Update Version"
     # Then, we want to use the commit we have just made, and force push our tag to that commit
     - name: Get Commit ID
       id: get_commit_id
@@ -117,35 +125,10 @@ jobs:
       run: |
         git branch version-${{ steps.get_tag_version.outputs.TAG }}
         git push -u origin version-${{ steps.get_tag_version.outputs.TAG }} --force --tags
-    # Get release that was created for this tag
-    - name: Get Release
-      uses: octokit/request-action@v2.x
-      id: get_release
-      with:
-          route: GET /repos/:repository/releases/tags/${{ steps.get_tag_version.outputs.TAG }}
-          repository: ${{ github.repository }}
-      env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    - name: Get Release Upload URL
-      id: get_upload_url
-      run: |
-        url=$(echo "$response" | jq -r '.upload_url')
-        echo $url
-        echo "::set-output name=upload_url::$url"
-      env: 
-          response: ${{ steps.get_release.outputs.data }}
-    - name: Get Library Name
-      id: libname
-      run: |
-        cd ./libs/arm64-v8a/
-        pattern="lib${module_id}*.so"
-        files=( $pattern )
-        echo ::set-output name=NAME::"${files[0]}"
+        
     - name: Change QPM Package Info
       run: |
         ./QPM/QPM package edit-extra "branchName" "version-${{ steps.get_tag_version.outputs.TAG }}"
-        ./QPM/QPM package edit-extra "soLink" "${{ steps.upload_release_asset.outputs.browser_download_url }}"
-        ./QPM/QPM package edit-extra "debugSoLink" "${{ steps.upload_debug_asset.outputs.browser_download_url }}"
     - name: Commit Changed package info
       run: |
         git add qpm.json
@@ -163,9 +146,6 @@ jobs:
         git push origin HEAD:version-${{ steps.get_tag_version.outputs.TAG }} --force
         git tag --force ${{ steps.get_tag_version.outputs.TAG }} ${{ steps.get_created_commit_id.outputs.ID }}
         git push --tags --force
-        
-#     - name: Merge this branch into whatever branch we were originally built off of.
-#       TODO
         
     - name: QPM Publish
       run: ./QPM/QPM publish

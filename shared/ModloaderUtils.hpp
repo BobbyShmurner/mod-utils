@@ -20,6 +20,7 @@ namespace ModloaderUtils {
 	static const char* m_ModPath;
 	static const char* m_LibPath;
 	static std::string m_GameVersion;
+	static std::string m_PackageName;
 	
 	static JavaVM* m_Jvm;
 
@@ -225,11 +226,18 @@ namespace ModloaderUtils {
     static std::string GetLibsFolder();
 
 	/**
-	 * @brief Get the version of Beat Saber that's currently running
+	 * @brief Get the version of the app that's currently running
 	 * 
 	 * @return A string that contains the game version
 	 */
 	static std::string GetGameVersion();
+
+	/**
+	 * @brief Gets the package name for the current app, for example "com.beatgames.beatsaber"
+	 * 
+	 * @return The current app's package name
+	 */
+	static std::string GetPackageName();
 
 	/**
 	 * @brief Returns a working pointer to a JNI Environment. Use this over Modloader::getJni()
@@ -241,9 +249,9 @@ namespace ModloaderUtils {
 	static JNIEnv* GetJNIEnv();
 
 	/**
-	 * @brief Restarts Beat Saber
+	 * @brief Restarts The Current Game
 	 */
-	static void RestartBS();
+	static void RestartGame();
 
 	/**
 	 * @brief Removes any .disabled files if a .so version of the file is found
@@ -263,6 +271,7 @@ namespace ModloaderUtils {
 	static void CollectModVersions();
 	static void CollectOddLibs();
 	static void CollectGameVersion();
+	static void CollectPackageName();
 
 	static std::string GetFileNameFromDir(std::string libName, bool guessLibName = false);
 	static std::string GetFileNameFromModID(std::string modID);
@@ -466,6 +475,10 @@ namespace ModloaderUtils {
 		return m_GameVersion;
 	}
 
+	std::string GetPackageName() {
+		return m_PackageName;
+	}
+
 	JNIEnv* GetJNIEnv() {
 		JNIEnv* env;
 
@@ -479,12 +492,13 @@ namespace ModloaderUtils {
 		return env;
 	}
 
-	void RestartBS() {
+	void RestartGame() {
+		Init();
 		getLogger().info("-- STARTING RESTART --");
 
 		JNIEnv* env = GetJNIEnv();
 
-		jstring packageName = env->NewStringUTF("com.beatgames.beatsaber");
+		jstring packageName = env->NewStringUTF(GetPackageName().c_str());
 
 		// // Get Context Shit (courtesy of sc2bad)
 		// GET_JCLASS(env, activityThreadClass, "android/app/ActivityThread", jclass);
@@ -631,11 +645,30 @@ namespace ModloaderUtils {
 		}
 	}
 
+	void CollectPackageName() {
+		LOG_JNI("Collecting Package Name...");
+		JNIEnv* env = GetJNIEnv();
+
+		GET_JCLASS(env, unityPlayerClass, "com/unity3d/player/UnityPlayer", jclass);
+		GET_STATIC_JFIELD(env, appActivity, unityPlayerClass, "currentActivity", "Landroid/app/Activity;", jobject);
+
+		CALL_JSTRING_METHOD(env, packageName, appActivity, "getPackageName", "()Ljava/lang/String;", jstring);
+
+		jboolean isCopy = true;
+		m_PackageName = std::string(env->GetStringUTFChars(packageName, &isCopy));
+
+		LOG_JNI("Got Package Name \"%s\"!", m_PackageName.c_str());
+
+		env->DeleteLocalRef(unityPlayerClass);
+		env->DeleteLocalRef(appActivity);
+		env->DeleteLocalRef(packageName);
+	}
+
 	void CollectGameVersion() {
 		LOG_JNI("Collecting Game Version...");
 		JNIEnv* env = GetJNIEnv();
 
-		jstring packageName = env->NewStringUTF("com.beatgames.beatsaber");
+		jstring packageName = env->NewStringUTF(GetPackageName().c_str());
 
 		GET_JCLASS(env, unityPlayerClass, "com/unity3d/player/UnityPlayer", jclass);
 		GET_STATIC_JFIELD(env, appActivity, unityPlayerClass, "currentActivity", "Landroid/app/Activity;", jobject);
@@ -651,8 +684,6 @@ namespace ModloaderUtils {
 		m_GameVersion = std::string(env->GetStringUTFChars(versionName, &isCopy));
 
 		LOG_JNI("Got Game Version \"%s\"!", m_GameVersion.c_str());
-
-		LOG_JNI("Cleaning Up!");
 		
 		env->DeleteLocalRef(packageName);
 		env->DeleteLocalRef(unityPlayerClass);
@@ -694,6 +725,7 @@ namespace ModloaderUtils {
 		if (m_HasInitialized) return;
 		m_HasInitialized = true;
 
+		CollectPackageName();
 		CollectGameVersion();
 		CollectLoadedMods();
 		CollectModVersions();
@@ -714,6 +746,8 @@ namespace ModloaderUtils {
 		m_OddLibNames = new std::list<std::string>();
 		m_LoadedMods = new std::list<std::string>();
 		m_ModVersions = new std::unordered_map<std::string, std::string>();
+
+		// May add a way to chose the mods and libs folder in the future, so modloader-utils isnt beat saber specific
 
 		m_ModPath = "/sdcard/Android/data/com.beatgames.beatsaber/files/mods/";
 		m_LibPath = "/sdcard/Android/data/com.beatgames.beatsaber/files/libs/";

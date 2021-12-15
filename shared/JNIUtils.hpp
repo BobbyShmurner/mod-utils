@@ -67,8 +67,8 @@ env->DeleteLocalRef((jobject)objectName##_MethodID)
 GET_JOBJECT_JCLASS(env, objectName##_Class, object, jclass); \
 jmethodID GET_JMETHODID(env, stringName##_MethodID, objectName##_Class, methodName, sig); \
 type stringName = (jstring)CALL_METHOD_FROM_JMETHODID(env, stringName, object, CallObjectMethod, stringName##_MethodID, __VA_ARGS__ ); \
-env->DeleteLocalRef((jobject)objectName##_MethodID); \
-env->DeleteLocalRef(stringName##_Class)
+env->DeleteLocalRef((jobject)stringName##_MethodID); \
+env->DeleteLocalRef(objectName##_Class)
 
 #define CALL_STATIC_JSTRING_METHOD(env, stringName, clazz, methodName, sig, type, ...) \
 jmethodID GET_STATIC_JMETHODID(env, stringName##_MethodID, clazz, methodName, sig); \
