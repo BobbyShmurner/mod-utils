@@ -21,8 +21,6 @@ namespace ModloaderUtils {
 	static const char* m_LibPath;
 	static std::string m_GameVersion;
 	static std::string m_PackageName;
-	
-	static JavaVM* m_Jvm;
 
 	static std::list<std::string>* m_OddLibNames;
 	static std::list<std::string>* m_CoreMods;
@@ -238,15 +236,6 @@ namespace ModloaderUtils {
 	 * @return The current app's package name
 	 */
 	static std::string GetPackageName();
-
-	/**
-	 * @brief Returns a working pointer to a JNI Environment. Use this over Modloader::getJni()
-	 * @details When using Modloader's getJni function, the JNIEnv* that it returns doesnt work on the Unity thread, as JNIEnvs are thread specific.
-	 * @details This function will return a JNIEnv* thar works on the UnityMain Thread
-	 * 
-	 * @return JNI Environment Pointer
-	 */
-	static JNIEnv* GetJNIEnv();
 
 	/**
 	 * @brief Restarts The Current Game
@@ -479,24 +468,11 @@ namespace ModloaderUtils {
 		return m_PackageName;
 	}
 
-	JNIEnv* GetJNIEnv() {
-		JNIEnv* env;
-
-		JavaVMAttachArgs args;
-		args.version = JNI_VERSION_1_6;
-		args.name = NULL;
-		args.group = NULL;
-
-		m_Jvm->AttachCurrentThread(&env, &args);
-
-		return env;
-	}
-
 	void RestartGame() {
 		Init();
 		getLogger().info("-- STARTING RESTART --");
 
-		JNIEnv* env = GetJNIEnv();
+		JNIEnv* env = JNIUtils::GetJNIEnv();
 
 		jstring packageName = JNIUtils::GetPackageName(env);
 
@@ -553,11 +529,6 @@ namespace ModloaderUtils {
 		}
 
 		return removedDuplicate;
-	}
-
-	void CacheJVM() {
-		JNIEnv* env = Modloader::getJni();
-		env->GetJavaVM(&m_Jvm);
 	}
 
 	void CollectCoreMods() {
@@ -628,7 +599,7 @@ namespace ModloaderUtils {
 
 	void CollectPackageName() {
 		LOG_JNI("Collecting Package Name...");
-		JNIEnv* env = GetJNIEnv();
+		JNIEnv* env = JNIUtils::GetJNIEnv();
 
 		jstring packageName = JNIUtils::GetPackageName(env);
 		m_PackageName = JNIUtils::ToString(env, packageName);
@@ -638,7 +609,7 @@ namespace ModloaderUtils {
 
 	void CollectGameVersion() {
 		LOG_JNI("Collecting Game Version...");
-		JNIEnv* env = GetJNIEnv();
+		JNIEnv* env = JNIUtils::GetJNIEnv();
 
 		jstring gameVersion = JNIUtils::GetGameVersion(env);
 		m_GameVersion = JNIUtils::ToString(env, gameVersion);
@@ -686,12 +657,6 @@ namespace ModloaderUtils {
 	}
 
 	static void __attribute__((constructor)) OnDlopen() {
-		__android_log_print(ANDROID_LOG_VERBOSE, "modloader-utils [JNI]", "Getting m_Jvm...");
-		CacheJVM();
-
-		if (m_Jvm != nullptr) __android_log_print(ANDROID_LOG_VERBOSE, "modloader-utils [JNI]", "Successfully cached m_Jvm!");
-		else __android_log_print(ANDROID_LOG_ERROR, "modloader-utils [JNI]", "Failed to cache m_Jvm, m_Jvm is a nullptr!");
-
 		// Setting Up These variables here, because they can be referenced before Init
 
 		m_CoreMods = new std::list<std::string>();
