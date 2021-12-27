@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ModloaderUtils.hpp"
-#include "JNIUtils.hpp"
+#include "modloader/shared/modloader.hpp"
+#include "jni-utils/shared/JNIUtils.hpp"
 
 #include <list>
 #include <dirent.h>
@@ -498,52 +498,33 @@ namespace ModloaderUtils {
 
 		JNIEnv* env = GetJNIEnv();
 
-		jstring packageName = env->NewStringUTF(GetPackageName().c_str());
+		jstring packageName = JNIUtils::GetPackageName(env);
 
-		// // Get Context Shit (courtesy of sc2bad)
-		// GET_JCLASS(env, activityThreadClass, "android/app/ActivityThread", jclass);
-		// GET_JCLASS(env, ActivityClass, "android/content/Context", NOTHING);
-
-		// CALL_STATIC_JOBJECT_METHOD(env, activityThread, activityThreadClass, "currentActivityThread", "()Landroid/app/ActivityThread;", jobject);
-		// CALL_JOBJECT_METHOD(env, AppActivity, activityThread, "getApplication", "()Landroid/app/Application;", NOTHING);
-
-		// Get Activity Shit (courtesy of NOT sc2bad (cus he's bad))
-		GET_JCLASS(env, unityPlayerClass, "com/unity3d/player/UnityPlayer", jclass);
-
-		GET_STATIC_JFIELD(env, appActivity, unityPlayerClass, "currentActivity", "Landroid/app/Activity;", jobject);
+		// Get Activity
+		jobject appActivity = JNIUtils::GetAppActivity(env);
 
 		// Get Package Manager
-		CALL_JOBJECT_METHOD(env, packageManager, appActivity, "getPackageManager", "()Landroid/content/pm/PackageManager;", jobject);
+		CALL_JOBJECT_METHOD(env, packageManager, appActivity, "getPackageManager", "()Landroid/content/pm/PackageManager;");
 
 		// Get Intent
-		CALL_JOBJECT_METHOD(env, intent, packageManager, "getLaunchIntentForPackage", "(Ljava/lang/String;)Landroid/content/Intent;", jobject, packageName);
+		CALL_JOBJECT_METHOD(env, intent, packageManager, "getLaunchIntentForPackage", "(Ljava/lang/String;)Landroid/content/Intent;", packageName);
 
 		// Set Intent Flags
-		CALL_JOBJECT_METHOD(env, setFlagsSuccess, intent, "setFlags", "(I)Landroid/content/Intent;", jobject, 536870912);
+		CALL_JOBJECT_METHOD(env, setFlagsSuccess, intent, "setFlags", "(I)Landroid/content/Intent;", 536870912);
 
 		// Get Component Name
-		CALL_JOBJECT_METHOD(env, componentName, intent, "getComponent", "()Landroid/content/ComponentName;", jobject);
+		CALL_JOBJECT_METHOD(env, componentName, intent, "getComponent", "()Landroid/content/ComponentName;");
 
 		// Create Restart Intent
-		GET_JCLASS(env, intentClass, "android/content/Intent", jclass);
-		CALL_STATIC_JOBJECT_METHOD(env, restartIntent, intentClass, "makeRestartActivityTask", "(Landroid/content/ComponentName;)Landroid/content/Intent;", jobject, componentName);
+		GET_JCLASS(env, intentClass, "android/content/Intent");
+		CALL_STATIC_JOBJECT_METHOD(env, restartIntent, intentClass, "makeRestartActivityTask", "(Landroid/content/ComponentName;)Landroid/content/Intent;", componentName);
 
 		// Restart Game
 		CALL_VOID_METHOD(env, appActivity, startActivity, "(Landroid/content/Intent;)V", restartIntent);
 
-		GET_JCLASS(env, processClass, "android/os/Process", jclass);
+		GET_JCLASS(env, processClass, "android/os/Process");
 
-		env->DeleteLocalRef(packageName);
-		env->DeleteLocalRef(unityPlayerClass);
-		env->DeleteLocalRef(appActivity);
-		env->DeleteLocalRef(packageManager);
-		env->DeleteLocalRef(intent);
-		env->DeleteLocalRef(setFlagsSuccess);
-		env->DeleteLocalRef(componentName);
-		env->DeleteLocalRef(intentClass);
-		env->DeleteLocalRef(restartIntent);
-
-		CALL_STATIC_JINT_METHOD(env, pid, processClass, "myPid", "()I", jint);
+		CALL_STATIC_JINT_METHOD(env, pid, processClass, "myPid", "()I");
 		CALL_STATIC_VOID_METHOD(env, processClass, killProcess, "(I)V", pid);
 	}
 
@@ -649,49 +630,20 @@ namespace ModloaderUtils {
 		LOG_JNI("Collecting Package Name...");
 		JNIEnv* env = GetJNIEnv();
 
-		GET_JCLASS(env, unityPlayerClass, "com/unity3d/player/UnityPlayer", jclass);
-		GET_STATIC_JFIELD(env, appActivity, unityPlayerClass, "currentActivity", "Landroid/app/Activity;", jobject);
-
-		CALL_JSTRING_METHOD(env, packageName, appActivity, "getPackageName", "()Ljava/lang/String;", jstring);
-
-		jboolean isCopy = true;
-		m_PackageName = std::string(env->GetStringUTFChars(packageName, &isCopy));
+		jstring packageName = JNIUtils::GetPackageName(env);
+		m_PackageName = JNIUtils::ToString(env, packageName);
 
 		LOG_JNI("Got Package Name \"%s\"!", m_PackageName.c_str());
-
-		env->DeleteLocalRef(unityPlayerClass);
-		env->DeleteLocalRef(appActivity);
-		env->DeleteLocalRef(packageName);
 	}
 
 	void CollectGameVersion() {
 		LOG_JNI("Collecting Game Version...");
 		JNIEnv* env = GetJNIEnv();
 
-		jstring packageName = env->NewStringUTF(GetPackageName().c_str());
-
-		GET_JCLASS(env, unityPlayerClass, "com/unity3d/player/UnityPlayer", jclass);
-		GET_STATIC_JFIELD(env, appActivity, unityPlayerClass, "currentActivity", "Landroid/app/Activity;", jobject);
-
-		CALL_JOBJECT_METHOD(env, packageManager, appActivity, "getPackageManager", "()Landroid/content/pm/PackageManager;", jobject);
-
-		CALL_JOBJECT_METHOD(env, packageInfo, packageManager, "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;", jobject, packageName, 0);
-		GET_JOBJECT_JCLASS(env, packageInfoClass, packageInfo, jclass);
-		
-		GET_JSTRING_JFIELD(env, versionName, packageInfo, packageInfoClass, "versionName", "Ljava/lang/String;", jstring);
-
-		jboolean isCopy = true;
-		m_GameVersion = std::string(env->GetStringUTFChars(versionName, &isCopy));
+		jstring gameVersion = JNIUtils::GetGameVersion(env);
+		m_GameVersion = JNIUtils::ToString(env, gameVersion);
 
 		LOG_JNI("Got Game Version \"%s\"!", m_GameVersion.c_str());
-		
-		env->DeleteLocalRef(packageName);
-		env->DeleteLocalRef(unityPlayerClass);
-		env->DeleteLocalRef(appActivity);
-		env->DeleteLocalRef(packageManager);
-		env->DeleteLocalRef(packageInfo);
-		env->DeleteLocalRef(packageInfoClass);
-		env->DeleteLocalRef(versionName);
 	}
 
 	std::string GetFileNameFromDir(std::string libName, bool guessLibName) {
