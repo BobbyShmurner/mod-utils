@@ -1,6 +1,11 @@
 #pragma once
 
+#include "modloader-utils/shared/QMod.hpp"
+
 #include "modloader/shared/modloader.hpp"
+
+#include "beatsaber-hook/shared/rapidjson/include/rapidjson/rapidjson.h"
+
 #include "jni-utils/shared/JNIUtils.hpp"
 
 #include <list>
@@ -275,7 +280,7 @@ namespace ModloaderUtils {
 		if (dir == nullptr) return files;
 
 		while ((dp = readdir(dir)) != NULL) {
-			if (strlen(dp->d_name) > 3 && dp->d_type != DT_DIR) {
+			if (dp->d_type != DT_DIR) {
 				files.emplace_front(std::string(dp->d_name));
 			}
 		}

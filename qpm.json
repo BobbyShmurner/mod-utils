@@ -20,6 +20,11 @@
       "id": "jni-utils",
       "versionRange": "*",
       "additionalData": {}
+    },
+    {
+      "id": "beatsaber-hook",
+      "versionRange": "*",
+      "additionalData": {}
     }
   ],
   "additionalData": {}
