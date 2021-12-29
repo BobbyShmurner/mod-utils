@@ -12,7 +12,10 @@
 #include "beatsaber-hook/shared/rapidjson/include/rapidjson/document.h"
 
 #define ASSERT(condition) if (!condition) return nullptr;
+#define ASSERT_VOID(condition) if (!condition) return;
+
 #define GET_STRING(value, parentObject) (parentObject.HasMember(value) && parentObject[value].IsString()) ? parentObject[value].GetString() : ""
+#define GET_BOOL(value, parentObject) (parentObject.HasMember(value) && parentObject[value].IsBool()) ? parentObject[value].GetBool() : false
 
 #define GET_ARRAY(value, array, type) \
 if (value.IsArray()) { \
@@ -97,9 +100,36 @@ namespace ModloaderUtils {
 			return qmod;
 		}
 
-		void SetCoverImageFilename(std::string fileName) { m_CoverImageFilename = fileName; }
-		void SetInstalled(bool installed) { m_Installed = installed; }
-		void SetUninstallable(bool uninstallable) { m_Uninstallable = uninstallable; }
+		void CollectBMBFData() {
+			std::ifstream configFile("/sdcard/BMBFData/config.json");
+			ASSERT_VOID(configFile.good());
+
+			std::stringstream configJson;
+			configJson << configFile.rdbuf();
+
+			rapidjson::Document document;
+
+			ASSERT_VOID(!document.Parse(configJson.str().c_str()).HasParseError());
+			ASSERT_VOID(document.IsObject());
+
+			const rapidjson::Value& mods = document["Mods"].GetArray();
+
+			for (rapidjson::SizeType i = 0; i < mods.Size(); i++) {
+				const rapidjson::Value& mod = mods[i];
+				std::string id = GET_STRING("Id", mod);
+
+				if (id != m_Id) continue;
+
+				m_Path = GET_STRING("Path", mod);
+				m_Installed = GET_BOOL("Installed", mod);
+				m_Uninstallable = GET_BOOL("Uninstallable", mod);
+
+				getLogger().info("Found BMBFInfo for \"%s\"", m_Id.c_str());
+				getLogger().info("\t- Path: %s", m_Path.c_str());
+				getLogger().info("\t- Installed: %s", m_Installed ? "True" : "False");
+				getLogger().info("\t- Uninstallable: %s", m_Uninstallable ? "True" : "False");
+			}
+		}
 
 		const std::string Name() { return m_Name; }
 		const std::string Id()  { return m_Id; }

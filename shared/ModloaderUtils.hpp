@@ -638,12 +638,13 @@ namespace ModloaderUtils {
 			QMod* qmod = QMod::LoadQMod(filePath);
 
 			if (qmod != nullptr) {
-				m_DownloadedQMods->push_back(qmod);
 				getLogger().info("Found QMod File \"%s\"", file.c_str());
+				qmod->CollectBMBFData();
+				m_DownloadedQMods->push_back(qmod);
 			}
 		}
 
-		getLogger().info("Collected Downloaded QMods!");
+		getLogger().info("Finished Collecting Downloaded QMods!");
 	}
 
 	std::string GetFileNameFromDir(std::string libName, bool guessLibName) {
