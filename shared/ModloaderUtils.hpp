@@ -20,18 +20,22 @@ Logger& getLogger();
 namespace ModloaderUtils {
 	// Declerations
 
-	static bool m_HasInitialized;
-
-	static const char* m_ModPath;
-	static const char* m_LibPath;
-	static std::string m_GameVersion;
-	static std::string m_PackageName;
-
-	static std::list<std::string>* m_OddLibNames;
-	static std::list<std::string>* m_CoreMods;
-	static std::list<std::string>* m_LoadedMods;
-
-	static std::unordered_map<std::string, std::string>* m_ModVersions;
+	inline bool m_HasInitialized;
+ 
+	inline const char* m_ModPath;
+	inline const char* m_LibPath;
+	inline const char* m_QModPath;
+ 
+	inline std::string m_GameVersion;
+	inline std::string m_PackageName;
+ 
+	inline std::list<std::string>* m_OddLibNames;
+	inline std::list<std::string>* m_CoreMods;
+	inline std::list<std::string>* m_LoadedMods;
+ 
+	inline std::list<QMod*>* m_DownloadedQMods;
+ 
+	inline std::unordered_map<std::string, std::string>* m_ModVersions;
 
 	/**
 	 * @brief Get all the files that are contained in a specified directory
@@ -39,7 +43,7 @@ namespace ModloaderUtils {
 	 * @param dirPath The Path to get the contents of
 	 * @return A list of all the files in the directory
 	 */
-	static std::list<std::string> GetDirContents(std::string dirPath);
+	inline std::list<std::string> GetDirContents(std::string dirPath);
 
 	/**
 	 * @brief Sets the activity of a specific mod
@@ -47,7 +51,7 @@ namespace ModloaderUtils {
 	 * @param name The mod to enable or disable
 	 * @param active Whether to enable or disable the mod
 	 */
-	static void SetModActive(std::string name, bool active);
+	inline void SetModActive(std::string name, bool active);
 
 	/**
 	 * @brief Sets the activity of a list of mods
@@ -55,21 +59,21 @@ namespace ModloaderUtils {
 	 * @param mods The list of mods to enable or disable
 	 * @param active Whether to enable or disable the mods
 	 */
-	static void SetModsActive(std::list<std::string>* mods, bool active);
+	inline void SetModsActive(std::list<std::string>* mods, bool active);
 
 	/**
 	 * @brief Toggles the activity of a specific mod to either enabled or diabled
 	 * 
 	 * @param name The mod to toggle
 	 */
-	static void ToggleMod(std::string name);
+	inline void ToggleMod(std::string name);
 
 	/**
 	 * @brief Toggles a list of mods on or off
 	 * 
 	 * @param mods The list of mods to be toggled
 	 */
-	static void ToggleMods(std::list<std::string>* mods);
+	inline void ToggleMods(std::list<std::string>* mods);
 
 	/**
 	 * @brief Checks if a mod is disabled for not
@@ -77,7 +81,7 @@ namespace ModloaderUtils {
 	 * @param name The mod to check
 	 * @return Returns true if disabled
 	 */
-	static bool IsDisabled(std::string name);
+	inline bool IsDisabled(std::string name);
 
 	/**
 	 * @brief Checks if a mod is an odd lib or not
@@ -87,7 +91,7 @@ namespace ModloaderUtils {
 	 * @param name The mod to check
 	 * @return Returns true if mod is an odd lib
 	 */
-	static bool IsOddLibName(std::string name);
+	inline bool IsOddLibName(std::string name);
 
 	/**
 	 * @brief Checks if a mod is loaded
@@ -96,7 +100,7 @@ namespace ModloaderUtils {
 	 * @param name The mod to check
 	 * @return Returns true if the mod is loaded
 	 */
-	static bool IsModLoaded(std::string name);
+	inline bool IsModLoaded(std::string name);
 
 	/**
 	 * @brief Checks if a mod is a core mod
@@ -104,7 +108,7 @@ namespace ModloaderUtils {
 	 * @param name The mod to check
 	 * @return Returns true if the mod is a core mod
 	 */
-	static bool IsCoreMod(std::string name);
+	inline bool IsCoreMod(std::string name);
 
 	/**
 	 * @brief Checks if a mod is a "Library" file or a "Mod" file
@@ -113,7 +117,7 @@ namespace ModloaderUtils {
 	 * @param name The mod to check
 	 * @return Returns true if the mod is a "Library" File. Returns false if the mod is a "Mod" File
 	 */
-	static bool IsModALibrary(std::string name);
+	inline bool IsModALibrary(std::string name);
 
     // Mod Id = Mod Name
     // Lib Name = libmodname
@@ -129,7 +133,7 @@ namespace ModloaderUtils {
 	 * @param name The name to check
 	 * @return Returns true if the name is a Mod ID
 	 */
-    static bool IsModID(std::string name);
+    inline bool IsModID(std::string name);
 
 	/**
 	 * @brief Checks if a mod name is a Lib Name
@@ -137,7 +141,7 @@ namespace ModloaderUtils {
 	 * @param name The name to check
 	 * @return Returns true if the name is a Lib Name
 	 */
-    static bool IsLibName(std::string name);
+    inline bool IsLibName(std::string name);
 
 	/**
 	 * @brief Checks if a mod name is a File Name
@@ -145,7 +149,7 @@ namespace ModloaderUtils {
 	 * @param name The name to check
 	 * @return Returns true if the name is a File Name
 	 */
-    static bool IsFileName(std::string name);
+    inline bool IsFileName(std::string name);
 
     // Name Conversions
 
@@ -156,7 +160,7 @@ namespace ModloaderUtils {
 	 * @param name The mod to get the id of
 	 * @return The mod's Mod ID. If the mod isn't loaded or the mod is a lib, the mod's Lib Name will be returned instead
 	 */
-	static std::string GetModID(std::string name);
+	inline std::string GetModID(std::string name);
 
 	/**
 	 * @brief Gets the Lib Name of a mod
@@ -165,7 +169,7 @@ namespace ModloaderUtils {
 	 * @param name The mod to get the lib name of
 	 * @return The mod's Lib Name.
 	 */
-    static std::string GetLibName(std::string name);
+    inline std::string GetLibName(std::string name);
 
 	/**
 	 * @brief Gets the File Name of a mod
@@ -174,7 +178,7 @@ namespace ModloaderUtils {
 	 * @param name The mod to get the file name of
 	 * @return The mod's File Name.
 	 */
-    static std::string GetFileName(std::string name);
+    inline std::string GetFileName(std::string name);
 
 	/**
 	 * @brief Gets the Version of a loaded mod
@@ -182,28 +186,28 @@ namespace ModloaderUtils {
 	 * @param name The mod to get the version of
 	 * @return The mod's version. Returns "Unknown" if failed to get the mod version
 	 */
-    static std::string GetModVersion(std::string name);
+    inline std::string GetModVersion(std::string name);
 
 	/**
 	 * @brief Get a list of all the loaded mods
 	 * 
 	 * @return Returns a list of loaded mod file names
 	 */
-	static std::list<std::string> GetLoadedModsFileNames();
+	inline std::list<std::string> GetLoadedModsFileNames();
 
 	/**
 	 * @brief Get a list of all the core mods for this version
 	 * 
 	 * @return Returns a list of Mod IDs for all the core mods
 	 */
-	static std::list<std::string> GetCoreMods();
+	inline std::list<std::string> GetCoreMods();
 
 	/**
 	 * @brief Get a list of all the "Odd Libs"
 	 * 
 	 * @return Returns a list of Odd Lib Names
 	 */
-	static std::list<std::string> GetOddLibNames();
+	inline std::list<std::string> GetOddLibNames();
 
 	/**
 	 * @brief Get's the error for a mod
@@ -212,40 +216,40 @@ namespace ModloaderUtils {
 	 * @param name The name of the mod to test for an error
 	 * @return Returns the error if there was one, else returns null
 	 */
-	static std::optional<std::string> GetModError(std::string name);
+	inline std::optional<std::string> GetModError(std::string name);
 
 	/**
 	 * @brief Gets the location of the Mods folder
 	 * 
 	 * @return The location of the Mods folder
 	 */
-    static std::string GetModsFolder();
+    inline std::string GetModsFolder();
 
 	/**
 	 * @brief Gets the location of the Libs folder
 	 * 
 	 * @return The location of the Libs folder
 	 */
-    static std::string GetLibsFolder();
+    inline std::string GetLibsFolder();
 
 	/**
 	 * @brief Get the version of the app that's currently running
 	 * 
 	 * @return A string that contains the game version
 	 */
-	static std::string GetGameVersion();
+	inline std::string GetGameVersion();
 
 	/**
 	 * @brief Gets the package name for the current app, for example "com.beatgames.beatsaber"
 	 * 
 	 * @return The current app's package name
 	 */
-	static std::string GetPackageName();
+	inline std::string GetPackageName();
 
 	/**
 	 * @brief Restarts The Current Game
 	 */
-	static void RestartGame();
+	inline void RestartGame();
 
 	/**
 	 * @brief Removes any .disabled files if a .so version of the file is found
@@ -253,22 +257,23 @@ namespace ModloaderUtils {
 	 * 
 	 * @return Returns true if a duplicate mod was found
 	 */
-	static bool RemoveDuplicateMods();
+	inline bool RemoveDuplicateMods();
 
 	// Private shit dont use >:(
 
-	static void Init();
-	static void CacheJVM();
+	inline void Init();
+	inline void CacheJVM();
 
-	static void CollectCoreMods();
-	static void CollectLoadedMods();
-	static void CollectModVersions();
-	static void CollectOddLibs();
-	static void CollectGameVersion();
-	static void CollectPackageName();
+	inline void CollectCoreMods();
+	inline void CollectLoadedMods();
+	inline void CollectModVersions();
+	inline void CollectOddLibs();
+	inline void CollectGameVersion();
+	inline void CollectPackageName();
+	inline void CollectDownloadedQMods();
 
-	static std::string GetFileNameFromDir(std::string libName, bool guessLibName = false);
-	static std::string GetFileNameFromModID(std::string modID);
+	inline std::string GetFileNameFromDir(std::string libName, bool guessLibName = false);
+	inline std::string GetFileNameFromModID(std::string modID);
 
 	// Definitions
 
@@ -603,23 +608,42 @@ namespace ModloaderUtils {
 	}
 
 	void CollectPackageName() {
-		LOG_JNI("Collecting Package Name...");
+		getLogger().info("Collecting Package Name...");
 		JNIEnv* env = JNIUtils::GetJNIEnv();
 
 		jstring packageName = JNIUtils::GetPackageName(env);
 		m_PackageName = JNIUtils::ToString(env, packageName);
 
-		LOG_JNI("Got Package Name \"%s\"!", m_PackageName.c_str());
+		getLogger().info("Got Package Name \"%s\"!", m_PackageName.c_str());
 	}
 
 	void CollectGameVersion() {
-		LOG_JNI("Collecting Game Version...");
+		getLogger().info("Collecting Game Version...");
 		JNIEnv* env = JNIUtils::GetJNIEnv();
 
 		jstring gameVersion = JNIUtils::GetGameVersion(env);
 		m_GameVersion = JNIUtils::ToString(env, gameVersion);
 
-		LOG_JNI("Got Game Version \"%s\"!", m_GameVersion.c_str());
+		getLogger().info("Got Game Version \"%s\"!", m_GameVersion.c_str());
+	}
+
+	void CollectDownloadedQMods() {
+		getLogger().info("Collecting Downloaded QMods...");
+
+		m_DownloadedQMods->clear();
+		std::list<std::string> fileNames = GetDirContents(m_QModPath);
+
+		for (std::string file : fileNames) {
+			std::string filePath = m_QModPath + file;
+			QMod* qmod = QMod::LoadQMod(filePath);
+
+			if (qmod != nullptr) {
+				m_DownloadedQMods->push_back(qmod);
+				getLogger().info("Found QMod File \"%s\"", file.c_str());
+			}
+		}
+
+		getLogger().info("Collected Downloaded QMods!");
 	}
 
 	std::string GetFileNameFromDir(std::string libName, bool guessLibName) {
@@ -653,25 +677,23 @@ namespace ModloaderUtils {
 		if (m_HasInitialized) return;
 		m_HasInitialized = true;
 
+		m_ModPath = "/sdcard/Android/data/com.beatgames.beatsaber/files/mods/";
+		m_LibPath = "/sdcard/Android/data/com.beatgames.beatsaber/files/libs/";
+		m_QModPath = "/sdcard/BMBFData/Mods/";
+
+		m_CoreMods = new std::list<std::string>();
+		m_OddLibNames = new std::list<std::string>();
+		m_LoadedMods = new std::list<std::string>();
+		m_DownloadedQMods = new std::list<QMod*>();
+		m_ModVersions = new std::unordered_map<std::string, std::string>();
+
 		CollectPackageName();
 		CollectGameVersion();
 		CollectLoadedMods();
 		CollectModVersions();
 		CollectOddLibs();
 		CollectCoreMods();
-	}
 
-	static void __attribute__((constructor)) OnDlopen() {
-		// Setting Up These variables here, because they can be referenced before Init
-
-		m_CoreMods = new std::list<std::string>();
-		m_OddLibNames = new std::list<std::string>();
-		m_LoadedMods = new std::list<std::string>();
-		m_ModVersions = new std::unordered_map<std::string, std::string>();
-
-		// May add a way to chose the mods and libs folder in the future, so modloader-utils isnt beat saber specific
-
-		m_ModPath = "/sdcard/Android/data/com.beatgames.beatsaber/files/mods/";
-		m_LibPath = "/sdcard/Android/data/com.beatgames.beatsaber/files/libs/";
+		CollectDownloadedQMods();
 	}
 };

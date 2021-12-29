@@ -11,7 +11,7 @@
 
 #include "beatsaber-hook/shared/rapidjson/include/rapidjson/document.h"
 
-#define ASSERT(condition) if (!condition) { getLogger().info("Failed to Load QMod: \"%s\" was False!", ""#condition); return nullptr; }
+#define ASSERT(condition) if (!condition) return nullptr;
 #define GET_STRING(value, parentObject) (parentObject.HasMember(value) && parentObject[value].IsString()) ? parentObject[value].GetString() : ""
 
 #define GET_ARRAY(value, array, type) \
