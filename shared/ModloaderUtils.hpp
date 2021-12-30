@@ -639,7 +639,6 @@ namespace ModloaderUtils {
 
 			if (qmod != nullptr) {
 				getLogger().info("Found QMod File \"%s\"", file.c_str());
-				qmod->CollectBMBFData();
 				m_DownloadedQMods->push_back(qmod);
 			}
 		}
