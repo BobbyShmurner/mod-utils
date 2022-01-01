@@ -16,22 +16,22 @@
 #include "beatsaber-hook/shared/rapidjson/include/rapidjson/error/error.h"
 #include "beatsaber-hook/shared/rapidjson/include/rapidjson/error/en.h"
 
-#define ASSERT(condition, fileName, verbos)                                                                       \
+#define ASSERT(condition, path, verbos)                                                                       \
 	if (!(condition))                                                                                             \
 	{                                                                                                             \
 		if (verbos)                                                                                               \
 			getLogger().info("QMOD ASSERT [%s:%i]: Condition \"%s\" Failed!", __FILE__, __LINE__, "" #condition); \
-		std::system(string_format("rm -r \"/sdcard/BMBFData/Mods/Temp/%s/\"", fileName.c_str()).c_str());         \
+		std::system(string_format("rm -r \"%s\"", GetTempDir(path).c_str()).c_str());         \
 		std::system(string_format("rmdir \"/sdcard/BMBFData/Mods/Temp/\"").c_str());                              \
                                                                                                                   \
 		return nullptr;                                                                                           \
 	}
-#define ASSERT_VOID(condition, fileName, verbos)                                                                  \
+#define ASSERT_VOID(condition, path, verbos)                                                                  \
 	if (!(condition))                                                                                             \
 	{                                                                                                             \
 		if (verbos)                                                                                               \
 			getLogger().info("QMOD ASSERT [%s:%i]: Condition \"%s\" Failed!", __FILE__, __LINE__, "" #condition); \
-		std::system(string_format("rm -r \"/sdcard/BMBFData/Mods/Temp/%s/\"", fileName.c_str()).c_str());         \
+		std::system(string_format("rm -r \"%s\"", GetTempDir(path).c_str()).c_str());         \
 		std::system(string_format("rmdir \"/sdcard/BMBFData/Mods/Temp/\"").c_str());                              \
                                                                                                                   \
 		return;                                                                                                   \
@@ -112,31 +112,29 @@ namespace ModloaderUtils
 	class QMod
 	{
 	public:
-		static QMod *LoadQMod(std::string fileDir, bool verbos = true)
+		static QMod* ParseQMod(std::string fileDir, bool verbos = true)
 		{
-			std::string fileName = fileDir.substr(fileDir.find_last_of("/\\") + 1);
-			size_t lastindex = fileName.find_last_of(".");
-			if (lastindex != std::string::npos) fileName = fileName.substr(0, lastindex);
+			std::string tmpDir = GetTempDir(fileDir);
 
 			// Create Temp Dir To Read the mod.json
 
-			std::system(string_format("rm -r \"/sdcard/BMBFData/Mods/Temp/%s/\"", fileName.c_str()).c_str());
-			std::system(string_format("mkdir -p \"/sdcard/BMBFData/Mods/Temp/%s/\"", fileName.c_str()).c_str());
-			std::system(string_format("unzip \"%s\" mod.json -d \"/sdcard/BMBFData/Mods/Temp/%s/\"", fileDir.c_str(), fileName.c_str()).c_str());
+			std::system(string_format("rm -r \"%s\"", tmpDir.c_str()).c_str());
+			std::system(string_format("mkdir -p \"%s\"", tmpDir.c_str()).c_str());
+			std::system(string_format("unzip \"%s\" mod.json -d \"%s\"", fileDir.c_str(), tmpDir.c_str()).c_str());
 
 			// Read the mod.json
 
-			std::ifstream qmodFile(string_format("/sdcard/BMBFData/Mods/Temp/%s/mod.json", fileName.c_str()).c_str());
-			ASSERT(qmodFile.good(), fileName, verbos);
+			std::ifstream qmodFile(string_format("%smod.json", tmpDir.c_str()).c_str());
+			ASSERT(qmodFile.good(), fileDir, verbos);
 
 			std::stringstream qmodJson;
 			qmodJson << qmodFile.rdbuf();
 
 			rapidjson::Document document;
-			ASSERT(!document.Parse(qmodJson.str().c_str()).HasParseError(), fileName, verbos);
+			ASSERT(!document.Parse(qmodJson.str().c_str()).HasParseError(), fileDir, verbos);
 
-			// Remove the Temp Dir after reading
-			std::system(string_format("rm -r \"/sdcard/BMBFData/Mods/Temp/%s/\"", fileName.c_str()).c_str());
+			// Clean Up Temp Dirs
+			CleanupTempDir(GetFileName(fileDir));
 
 			// Get Values
 
@@ -168,9 +166,6 @@ namespace ModloaderUtils
 			// Attempt to load BMBF Specific Data
 			qmod->CollectBMBFData();
 
-			// Clean Up Temp Dirs
-			CleanupTempDir(fileName);
-
 			return qmod;
 		}
 
@@ -185,7 +180,7 @@ namespace ModloaderUtils
 			// Read the config.json file
 
 			std::ifstream configFile("/sdcard/BMBFData/config.json");
-			ASSERT_VOID(configFile.good(), GetFileName(), verbos);
+			ASSERT_VOID(configFile.good(), m_Path, verbos);
 
 			std::stringstream configJson;
 			configJson << configFile.rdbuf();
@@ -223,13 +218,13 @@ namespace ModloaderUtils
 
 		void ExtractQMod()
 		{
-			std::string extractionPath = GetExtractionDir();
-			std::string modsExtractionPath = extractionPath + "Mods/";
-			std::string libsExtractionPath = extractionPath + "Libs/";
-			std::string fileCopiesExtractionPath = extractionPath + "FileCopies/";
+			std::string tmpDir = GetTempDir(m_Path);
+			std::string modsExtractionPath = tmpDir + "Mods/";
+			std::string libsExtractionPath = tmpDir + "Libs/";
+			std::string fileCopiesExtractionPath = tmpDir + "FileCopies/";
 
 			// Remove existing files
-			std::system(string_format("rm -r \"%s\"", extractionPath.c_str()).c_str());
+			std::system(string_format("rm -r \"%s\"", tmpDir.c_str()).c_str());
 
 			// Create dirs
 			std::system(string_format("mkdir -p \"%s\"", modsExtractionPath.c_str()).c_str());
@@ -280,16 +275,20 @@ namespace ModloaderUtils
 			// Extract QMod so we can move the files
 			ExtractQMod();
 
-			std::string extractionPath = GetExtractionDir();
-			std::string modsExtractionPath = extractionPath + "Mods/";
-			std::string libsExtractionPath = extractionPath + "Libs/";
-			std::string fileCopiesExtractionPath = extractionPath + "FileCopies/";
+			std::string tmpDir = GetTempDir(m_Path);
+			std::string modsExtractionPath = tmpDir + "Mods/";
+			std::string libsExtractionPath = tmpDir + "Libs/";
+			std::string fileCopiesExtractionPath = tmpDir + "FileCopies/";
 
 			// Copy the Mods files to the Mods folder
-			std::system(string_format("cp -a \"%s.\" \"%s\"", modsExtractionPath.c_str(), "/sdcard/Android/data/com.beatgames.beatsaber/files/mods/").c_str());
+			for (std::string mod : *m_ModFiles) {
+				std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/mods/\"", modsExtractionPath.c_str(), mod.c_str()).c_str());
+			}
 
 			// Copy the Libs files to the Libs folder
-			std::system(string_format("cp -a \"%s.\" \"%s\"", libsExtractionPath.c_str(), "/sdcard/Android/data/com.beatgames.beatsaber/files/libs/").c_str());
+			for (std::string lib : *m_LibraryFiles) {
+				std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/libs/\"", libsExtractionPath.c_str(), lib.c_str()).c_str());
+			}
 
 			// Copy the File Copies to their respective destination folders
 			for (FileCopy fileCopy : *m_FileCopies)
@@ -312,7 +311,7 @@ namespace ModloaderUtils
 			}
 
 			getLogger().info("Successfully Installed \"%s\"!", m_Name.c_str());
-			CleanupTempDir();
+			CleanupTempDir(GetFileName(m_Path));
 		}
 
 		const std::string Name() { return m_Name; }
@@ -337,26 +336,38 @@ namespace ModloaderUtils
 		const bool Installed() { return m_Installed; }
 		const bool Uninstallable() { return m_Uninstallable; }
 
-		const std::string GetExtractionDir() { return string_format("/sdcard/BMBFData/Mods/Temp/%s/", m_Id.c_str()); }
-
-		const void CleanupTempDir()
-		{
-			std::system(string_format("rm -r \"%s\"", GetExtractionDir().c_str()).c_str()); // Remove This QMod's Temp Dir
-			std::system("rmdir \"/sdcard/BMBFData/Mods/Temp/\"");							// Attempt To Remove the entire Temp Dir, but only if it's empty
+		const static std::string GetTempDir(std::string path) {
+			return string_format("/sdcard/BMBFData/Mods/Temp/%s/", GetFileName(path).c_str());
 		}
 
 		const static void CleanupTempDir(std::string fileName)
 		{
 			std::system(string_format("rm -r \"/sdcard/BMBFData/Mods/Temp/%s/\"", fileName.c_str()).c_str()); // Remove This QMod's Temp Dir
-			std::system("rmdir \"/sdcard/BMBFData/Mods/Temp/\"");											  // Attempt To Remove the entire Temp Dir, but only if it's empty
+			std::system("rmdir \"/sdcard/BMBFData/Mods/Temp/\"");										  // Attempt To Remove the entire Temp Dir, but only if it's empty
 		}
 
-		const std::string GetFileName()
+		static const std::string GetFileName(std::string path, bool removeFileExtension = true, bool returnTrueName = false)
 		{
-			std::string fileName = m_Path.substr(m_Path.find_last_of("/\\") + 1);
+			// Get the file name
+
+			std::string fileName = path.substr(path.find_last_of("/\\") + 1);
+
+			if (returnTrueName) return fileName; // This will just return the actual file name, with no modifications
+
+			// Replace all spaces with underscores, as bmbf doesnt like qmods with spaces
+
+			std::replace(fileName.begin(), fileName.end(), ' ', '_');
+
+			// Remove the File Extension (if there is one)
+
 			size_t lastindex = fileName.find_last_of(".");
-			if (lastindex != std::string::npos)
-				fileName = fileName.substr(0, lastindex);
+			if (lastindex != std::string::npos) fileName = fileName.substr(0, lastindex);
+
+			if (removeFileExtension) { return fileName; }
+
+			// Add the .qmod extension
+
+			fileName += ".qmod";
 
 			return fileName;
 		}
@@ -388,7 +399,7 @@ namespace ModloaderUtils
 			// Read the config.json file
 
 			std::ifstream configFile("/sdcard/BMBFData/config.json");
-			ASSERT_VOID(configFile.good(), GetFileName(), verbos);
+			ASSERT_VOID(configFile.good(), m_Path, verbos);
 
 			std::stringstream configJson;
 			configJson << configFile.rdbuf();
@@ -400,8 +411,8 @@ namespace ModloaderUtils
 			const auto &mods = document["Mods"].GetArray();
 			bool foundMod = false;
 
-			std::string fileName = m_Path.substr(m_Path.find_last_of("/\\") + 1);
-			std::string displayName = GetFileName();
+			std::string fileName = GetFileName(m_Path, false);
+			std::string displayName = GetFileName(m_Path);
 
 			// Move QMod
 
@@ -412,7 +423,7 @@ namespace ModloaderUtils
 
 			if (m_CoverImage != "")
 			{
-				std::string tmpDir = string_format("/sdcard/BMBFData/Mods/Temp/%s/", displayName.c_str());
+				std::string tmpDir = GetTempDir(m_Path);
 
 				std::system(string_format("rm -r \"%s\"", tmpDir.c_str()).c_str());
 				std::system(string_format("mkdir -p \"%s\"", tmpDir.c_str()).c_str());

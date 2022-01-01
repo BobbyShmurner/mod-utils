@@ -635,7 +635,7 @@ namespace ModloaderUtils {
 
 		for (std::string file : fileNames) {
 			std::string filePath = m_QModPath + file;
-			QMod* qmod = QMod::LoadQMod(filePath, false);
+			QMod* qmod = QMod::ParseQMod(filePath, false);
 
 			if (qmod != nullptr) {
 				getLogger().info("Found QMod File \"%s\"", file.c_str());
