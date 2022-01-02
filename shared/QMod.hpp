@@ -250,7 +250,7 @@ namespace ModloaderUtils
 			}
 		}
 
-		void Install(std::string packageId = "com.beatgames.beatsaber", std::vector<std::string> installedInBranch = std::vector<std::string>())
+		void Install(std::string packageId = "com.beatgames.beatsaber", std::vector<std::string>* installedInBranch = new std::vector<std::string>())
 		{
 			if (m_Installed)
 			{
@@ -265,53 +265,9 @@ namespace ModloaderUtils
 			}
 
 			getLogger().info("Installing mod \"%s\"", m_Id.c_str());
-			installedInBranch.push_back(m_Id); // Add to the installed tree so that dependencies further down on us will trigger a recursive install error
 
-			// for (Dependency dependency : *m_Dependencies)
-			// {
-			//     PrepareDependency(dependency, installedInBranch);
-			// }
-
-			// Extract QMod so we can move the files
-			ExtractQMod();
-
-			std::string tmpDir = GetTempDir(m_Path);
-			std::string modsExtractionPath = tmpDir + "Mods/";
-			std::string libsExtractionPath = tmpDir + "Libs/";
-			std::string fileCopiesExtractionPath = tmpDir + "FileCopies/";
-
-			// Copy the Mods files to the Mods folder
-			for (std::string mod : *m_ModFiles) {
-				std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/mods/\"", modsExtractionPath.c_str(), mod.c_str()).c_str());
-			}
-
-			// Copy the Libs files to the Libs folder
-			for (std::string lib : *m_LibraryFiles) {
-				std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/libs/\"", libsExtractionPath.c_str(), lib.c_str()).c_str());
-			}
-
-			// Copy the File Copies to their respective destination folders
-			for (FileCopy fileCopy : *m_FileCopies)
-			{
-				std::string desPath = fileCopy.destination.substr(0, fileCopy.destination.find_last_of("/\\"));
-
-				std::system(string_format("mkdir -p \"%s\"", desPath.c_str()).c_str());
-				std::remove(fileCopy.destination.c_str());
-
-				std::system(string_format("mv -f \"%s%s\" \"%s\"", fileCopiesExtractionPath.c_str(), fileCopy.name.c_str(), fileCopy.destination.c_str()).c_str());
-			}
-
-			m_Installed = true;
-			installedInBranch.erase(std::remove(installedInBranch.begin(), installedInBranch.end(), m_Id), installedInBranch.end());
-
-			// If QMod is for Beat Saber, then Update its BMBF Data
-			if (!strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
-			{
-				UpdateBMBFData();
-			}
-
-			getLogger().info("Successfully Installed \"%s\"!", m_Name.c_str());
-			CleanupTempDir(GetFileName(m_Path));
+			auto t = std::thread(&QMod::InstallAsync, this, packageId, installedInBranch);
+			t.detach();
 		}
 
 		const std::string Name() { return m_Name; }
@@ -375,6 +331,56 @@ namespace ModloaderUtils
 	private:
 		QMod(std::string name, std::string id, std::string description, std::string author, std::string porter, std::string version, std::string coverImage, std::string packageId, std::string packageVersion, std::vector<std::string> *modFiles, std::vector<std::string> *libraryFiles, std::vector<Dependency> *dependencies, std::vector<FileCopy> *fileCopies, std::string path = "", std::string coverImageFilename = "", bool installed = false, bool uninstallable = true)
 			: m_Name(name), m_Id(id), m_Description(description), m_Author(author), m_Porter(porter), m_Version(version), m_CoverImage(coverImage), m_PackageId(packageId), m_PackageVersion(packageVersion), m_ModFiles(modFiles), m_LibraryFiles(libraryFiles), m_Dependencies(dependencies), m_FileCopies(fileCopies), m_Path(path), m_CoverImageFilename(coverImageFilename), m_Installed(installed), m_Uninstallable(uninstallable) {}
+
+		void InstallAsync(std::string packageId, std::vector<std::string>* installedInBranch) {
+			installedInBranch->push_back(m_Id); // Add to the installed tree so that dependencies further down on us will trigger a recursive install error
+
+			// for (Dependency dependency : *m_Dependencies)
+			// {
+			//     PrepareDependency(dependency, installedInBranch);
+			// }
+
+			// Extract QMod so we can move the files
+			ExtractQMod();
+
+			std::string tmpDir = GetTempDir(m_Path);
+			std::string modsExtractionPath = tmpDir + "Mods/";
+			std::string libsExtractionPath = tmpDir + "Libs/";
+			std::string fileCopiesExtractionPath = tmpDir + "FileCopies/";
+
+			// Copy the Mods files to the Mods folder
+			for (std::string mod : *m_ModFiles) {
+				std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/mods/\"", modsExtractionPath.c_str(), mod.c_str()).c_str());
+			}
+
+			// Copy the Libs files to the Libs folder
+			for (std::string lib : *m_LibraryFiles) {
+				std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/libs/\"", libsExtractionPath.c_str(), lib.c_str()).c_str());
+			}
+
+			// Copy the File Copies to their respective destination folders
+			for (FileCopy fileCopy : *m_FileCopies)
+			{
+				std::string desPath = fileCopy.destination.substr(0, fileCopy.destination.find_last_of("/\\"));
+
+				std::system(string_format("mkdir -p \"%s\"", desPath.c_str()).c_str());
+				std::remove(fileCopy.destination.c_str());
+
+				std::system(string_format("mv -f \"%s%s\" \"%s\"", fileCopiesExtractionPath.c_str(), fileCopy.name.c_str(), fileCopy.destination.c_str()).c_str());
+			}
+
+			m_Installed = true;
+			installedInBranch->erase(std::remove(installedInBranch->begin(), installedInBranch->end(), m_Id), installedInBranch->end());
+
+			// If QMod is for Beat Saber, then Update its BMBF Data
+			if (!strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
+			{
+				UpdateBMBFData();
+			}
+
+			getLogger().info("Successfully Installed \"%s\"!", m_Name.c_str());
+			CleanupTempDir(GetFileName(m_Path));
+		}
 
 		void UpdateBMBFJSONData(auto &mod, auto &allocator)
 		{
