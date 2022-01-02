@@ -506,12 +506,12 @@ namespace ModloaderUtils {
 		CALL_STATIC_JOBJECT_METHOD(env, restartIntent, intentClass, "makeRestartActivityTask", "(Landroid/content/ComponentName;)Landroid/content/Intent;", componentName);
 
 		// Restart Game
-		CALL_VOID_METHOD(env, appActivity, startActivity, "(Landroid/content/Intent;)V", restartIntent);
+		CALL_VOID_METHOD(env, appActivity, "startActivity", "(Landroid/content/Intent;)V", restartIntent);
 
 		GET_JCLASS(env, processClass, "android/os/Process");
 
 		CALL_STATIC_JINT_METHOD(env, pid, processClass, "myPid", "()I");
-		CALL_STATIC_VOID_METHOD(env, processClass, killProcess, "(I)V", pid);
+		CALL_STATIC_VOID_METHOD(env, processClass, "killProcess", "(I)V", pid);
 	}
 
 	bool RemoveDuplicateMods() {
