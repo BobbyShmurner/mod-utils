@@ -15,6 +15,8 @@
 #include "modloader-utils/shared/Types/Dependency.hpp"
 #include "modloader-utils/shared/Types/FileCopy.hpp"
 
+#include "jni-utils/shared/JNIUtils.hpp"
+
 #include "beatsaber-hook/shared/rapidjson/include/rapidjson/document.h"
 #include "beatsaber-hook/shared/rapidjson/include/rapidjson/writer.h"
 #include "beatsaber-hook/shared/rapidjson/include/rapidjson/filewritestream.h"
@@ -257,7 +259,7 @@ namespace ModloaderUtils
 			}
 		}
 
-		void Install(std::vector<std::string>* installedInBranch = new std::vector<std::string>(), std::string packageId = "com.beatgames.beatsaber")
+		void Install(std::vector<std::string>* installedInBranch = new std::vector<std::string>())
 		{
 			if (m_Installed)
 			{
@@ -265,15 +267,18 @@ namespace ModloaderUtils
 				return;
 			}
 
-			if (m_PackageId != packageId)
+			JNIEnv* env = JNIUtils::GetJNIEnv();
+			std::string appPackageId = JNIUtils::ToString(env, JNIUtils::GetPackageName(env));
+
+			if (m_PackageId != appPackageId)
 			{
-				getLogger().info("Mod \"%s\" Is not built for the package \"%s\", but instead is built for \"%s\"!", m_Id.c_str(), packageId.c_str(), m_PackageId.c_str());
+				getLogger().info("Mod \"%s\" Is not built for the package \"%s\", but instead is built for \"%s\"!", m_Id.c_str(), appPackageId.c_str(), m_PackageId.c_str());
 				return;
 			}
 
 			getLogger().info("Installing mod \"%s\"", m_Id.c_str());
 
-			auto t = std::thread(&QMod::InstallAsync, this, installedInBranch, packageId);
+			auto t = std::thread(&QMod::InstallAsync, this, installedInBranch);
 			t.detach();
 		}
 
@@ -349,7 +354,7 @@ namespace ModloaderUtils
 		QMod(std::string name, std::string id, std::string description, std::string author, std::string porter, std::string version, std::string coverImage, std::string packageId, std::string packageVersion, std::vector<std::string> *modFiles, std::vector<std::string> *libraryFiles, std::vector<Dependency> *dependencies, std::vector<FileCopy> *fileCopies, std::string path = "", std::string coverImageFilename = "", bool installed = false, bool uninstallable = true)
 			: m_Name(name), m_Id(id), m_Description(description), m_Author(author), m_Porter(porter), m_Version(version), m_CoverImage(coverImage), m_PackageId(packageId), m_PackageVersion(packageVersion), m_ModFiles(modFiles), m_LibraryFiles(libraryFiles), m_Dependencies(dependencies), m_FileCopies(fileCopies), m_Path(path), m_CoverImageFilename(coverImageFilename), m_Installed(installed), m_Uninstallable(uninstallable) {}
 
-		void InstallAsync(std::vector<std::string>* installedInBranch, std::string packageId) {
+		void InstallAsync(std::vector<std::string>* installedInBranch) {
 			installedInBranch->push_back(m_Id); // Add to the installed tree so that dependencies further down on us will trigger a recursive install error
 			m_Installed = true; // We say that the mod is installed now to prevent multiple installs of the same mod a mod is a dependency. If the install fails we can then 
 
@@ -534,7 +539,7 @@ namespace ModloaderUtils
 
 			// Everything's looking good, time to install!
 			// NOTE: There is no clean up here because the cleanup will occur during the install
-			downloadedDependency->Install(installedInBranch, downloadedDependency->m_PackageId);
+			downloadedDependency->Install(installedInBranch);
 			return true;
 		}
 
