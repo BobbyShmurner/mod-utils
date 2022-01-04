@@ -1,6 +1,6 @@
 #pragma once
 
-#include "modloader-utils/shared/QMod.hpp"
+#include "modloader-utils/shared/Types/QMod.hpp"
 
 #include "modloader/shared/modloader.hpp"
 
@@ -32,8 +32,6 @@ namespace ModloaderUtils {
 	inline std::list<std::string>* m_OddLibNames;
 	inline std::list<std::string>* m_CoreMods;
 	inline std::list<std::string>* m_LoadedMods;
- 
-	inline std::list<QMod*>* m_DownloadedQMods;
  
 	inline std::unordered_map<std::string, std::string>* m_ModVersions;
 
@@ -630,7 +628,7 @@ namespace ModloaderUtils {
 	void CollectDownloadedQMods() {
 		getLogger().info("Collecting Downloaded QMods...");
 
-		m_DownloadedQMods->clear();
+		QMod::DownloadedQMods->clear();
 		std::list<std::string> fileNames = GetDirContents(m_QModPath);
 
 		for (std::string file : fileNames) {
@@ -639,7 +637,7 @@ namespace ModloaderUtils {
 
 			if (qmod != nullptr) {
 				getLogger().info("Found QMod File \"%s\"", file.c_str());
-				m_DownloadedQMods->push_back(qmod);
+				QMod::DownloadedQMods->push_back(qmod);
 			}
 		}
 
@@ -684,7 +682,6 @@ namespace ModloaderUtils {
 		m_CoreMods = new std::list<std::string>();
 		m_OddLibNames = new std::list<std::string>();
 		m_LoadedMods = new std::list<std::string>();
-		m_DownloadedQMods = new std::list<QMod*>();
 		m_ModVersions = new std::unordered_map<std::string, std::string>();
 
 		CollectPackageName();
