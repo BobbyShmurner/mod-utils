@@ -629,15 +629,17 @@ namespace ModloaderUtils {
 		getLogger().info("Collecting Downloaded QMods...");
 
 		QMod::DownloadedQMods->clear();
+		QMod::DownloadedQModIds->clear();
 		std::list<std::string> fileNames = GetDirContents(m_QModPath);
 
 		for (std::string file : fileNames) {
 			std::string filePath = m_QModPath + file;
-			QMod* qmod = QMod::ParseQMod(filePath, false);
+			QMod* qmod = new QMod(filePath, false);
 
 			if (qmod != nullptr) {
 				getLogger().info("Found QMod File \"%s\"", file.c_str());
 				QMod::DownloadedQMods->push_back(qmod);
+				QMod::DownloadedQModIds->push_back(qmod->Id());
 			}
 		}
 

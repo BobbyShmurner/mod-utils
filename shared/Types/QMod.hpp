@@ -22,25 +22,16 @@
 #include "beatsaber-hook/shared/rapidjson/include/rapidjson/error/error.h"
 #include "beatsaber-hook/shared/rapidjson/include/rapidjson/error/en.h"
 
-#define ASSERT(condition, name, verbos)                                                                           \
-	if (!(condition))                                                                                             \
-	{                                                                                                             \
-		if (verbos)                                                                                               \
-			getLogger().info("[%s] QMOD ASSERT [%s:%i]: Condition \"%s\" Failed!", name.c_str(), __FILE__, __LINE__, "" #condition); \
-		CleanupTempDir(name);                                                                                     \
-		CleanupTempDir(string_format("Downloads/%s", name.c_str()), true);                                        \
-                                                                                                                  \
-		return nullptr;                                                                                           \
-	}
-#define ASSERT_VOID(condition, name, verbos)                                                                      \
-	if (!(condition))                                                                                             \
-	{                                                                                                             \
-		if (verbos)                                                                                               \
-			getLogger().info("[%s] QMOD ASSERT [%s:%i]: Condition \"%s\" Failed!", name.c_str(), __FILE__, __LINE__, "" #condition); \
-		CleanupTempDir(name);                                                                                     \
-		CleanupTempDir(string_format("Downloads/%s", name.c_str()), true);                                        \
-                                                                                                                  \
-		return;                                                                                                   \
+#define ASSERT(condition, name, verbos)                                                                                                  \
+	{                                                                                                                                    \
+		if (!(condition))                                                                                                                \
+		{                                                                                                                                \
+			if (verbos)                                                                                                                  \
+				getLogger().info("[%s] QMOD ASSERT [%s:%i]: Condition \"%s\" Failed!", name.c_str(), __FILE__, __LINE__, "" #condition); \
+                                                                                                                                         \
+			CleanupTempDir(name);                                                                                                        \
+			CleanupTempDir(string_format("Downloads/%s.qmod", name.c_str()), true);                                                           \
+		}                                                                                                                                \
 	}
 
 #define GET_STRING(value, parentObject) (parentObject.HasMember(value) && parentObject[value].IsString()) ? parentObject[value].GetString() : ""
@@ -118,21 +109,21 @@ namespace ModloaderUtils
 	class QMod
 	{
 	public:
-		inline static std::vector<QMod *> *DownloadedQMods = new std::vector<QMod *>();
+		inline static std::vector<QMod *>* DownloadedQMods = new std::vector<QMod*>();
+		inline static std::vector<std::string>* DownloadedQModIds = new std::vector<std::string>();
 
-		static QMod *ParseQMod(std::string fileDir, bool verbos = true)
+		QMod(std::string fileDir, bool verbos = true)
 		{
 			std::string tmpDir = GetTempDir(fileDir);
 
 			// Create Temp Dir To Read the mod.json
 
 			std::system(string_format("mkdir -p \"%s\"", tmpDir.c_str()).c_str());
-			std::system(string_format("unzip -o \"%s\" mod.json -d \"%s\"", fileDir.c_str(), tmpDir.c_str()).c_str());
+			std::system(string_format("unzip \"%s\" mod.json -d \"%s\"", fileDir.c_str(), tmpDir.c_str()).c_str());
 
 			// Read the mod.json
 
 			std::ifstream qmodFile(string_format("%smod.json", tmpDir.c_str()).c_str());
-			//ASSERT(qmodFile.good(), GetFileName(fileDir), verbos);
 
 			std::stringstream qmodJson;
 			qmodJson << qmodFile.rdbuf();
@@ -145,113 +136,34 @@ namespace ModloaderUtils
 
 			// Get Values
 
-			std::string name = GET_STRING("name", document);
-			std::string id = GET_STRING("id", document);
-			std::string description = GET_STRING("description", document);
-			std::string author = GET_STRING("author", document);
-			std::string porter = GET_STRING("porter", document);
-			std::string version = GET_STRING("version", document);
-			std::string coverImage = GET_STRING("coverImage", document);
-			std::string packageId = GET_STRING("packageId", document);
-			std::string packageVersion = GET_STRING("packageVersion", document);
+			m_Name = GET_STRING("name", document);
+			m_Id = GET_STRING("id", document);
+			m_Description = GET_STRING("description", document);
+			m_Author = GET_STRING("author", document);
+			m_Porter = GET_STRING("porter", document);
+			m_Version = GET_STRING("version", document);
+			m_CoverImage = GET_STRING("coverImage", document);
+			m_PackageId = GET_STRING("packageId", document);
+			m_PackageVersion = GET_STRING("packageVersion", document);
 
-			std::vector<std::string> *modFiles = new std::vector<std::string>();
-			GET_ARRAY(document["modFiles"], modFiles, String);
+			m_ModFiles = new std::vector<std::string>();
+			GET_ARRAY(document["modFiles"], m_ModFiles, String);
 
-			std::vector<std::string> *libraryFiles = new std::vector<std::string>();
-			GET_ARRAY(document["libraryFiles"], libraryFiles, String);
+			m_LibraryFiles = new std::vector<std::string>();
+			GET_ARRAY(document["libraryFiles"], m_LibraryFiles, String);
 
-			std::vector<Dependency> *dependencies = new std::vector<Dependency>();
-			GET_DEPENDENCIES(document["dependencies"], dependencies);
+			m_Dependencies = new std::vector<Dependency>();
+			GET_DEPENDENCIES(document["dependencies"], m_Dependencies);
 
-			std::vector<FileCopy> *fileCopies = new std::vector<FileCopy>();
-			GET_FILE_COPIES(document["fileCopies"], fileCopies);
+			m_FileCopies = new std::vector<FileCopy>();
+			GET_FILE_COPIES(document["fileCopies"], m_FileCopies);
 
-			// Create The QMod using this data
-			QMod *qmod = new QMod(name, id, description, author, porter, version, coverImage, packageId, packageVersion, modFiles, libraryFiles, dependencies, fileCopies, fileDir);
+			m_Path = fileDir;
 
 			// Attempt to load BMBF Specific Data
-			qmod->CollectBMBFData();
+			CollectBMBFData(verbos);
 
-			return qmod;
-		}
-
-		void CollectBMBFData(bool verbos = true)
-		{
-			if (strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
-			{
-				getLogger().info("Failed to collect BMBF Data, QMod isn't for Beat Saber! (PackageId: %s)", m_PackageId.c_str());
-				return;
-			}
-
-			// Read the config.json file
-
-			std::ifstream configFile("/sdcard/BMBFData/config.json");
-			ASSERT_VOID(configFile.good(), GetFileName(m_Path), verbos);
-
-			std::stringstream configJson;
-			configJson << configFile.rdbuf();
-
-			rapidjson::Document document;
-
-			document.Parse(configJson.str().c_str());
-
-			const auto &mods = document["Mods"].GetArray();
-
-			bool foundMod = false;
-			for (rapidjson::SizeType i = 0; i < mods.Size(); i++)
-			{
-				// Find our mod id, then read the data
-
-				auto &mod = mods[i];
-				std::string id = GET_STRING("Id", mod);
-
-				if (id != m_Id)
-					continue;
-				foundMod = true;
-
-				m_Path = GET_STRING("Path", mod);
-				m_Installed = GET_BOOL("Installed", mod);
-				m_Uninstallable = GET_BOOL("Uninstallable", mod);
-			}
-
-			// Couldnt Find existing BMBF Data, So just set default values;
-			if (!foundMod)
-			{
-				m_Installed = false;
-				m_Uninstallable = true;
-			}
-		}
-
-		void ExtractQMod()
-		{
-			std::string tmpDir = GetTempDir(m_Path);
-			std::string modsExtractionPath = tmpDir + "Mods/";
-			std::string libsExtractionPath = tmpDir + "Libs/";
-			std::string fileCopiesExtractionPath = tmpDir + "FileCopies/";
-
-			// Create dirs
-			std::system(string_format("mkdir -p \"%s\"", modsExtractionPath.c_str()).c_str());
-			std::system(string_format("mkdir -p \"%s\"", libsExtractionPath.c_str()).c_str());
-			std::system(string_format("mkdir -p \"%s\"", fileCopiesExtractionPath.c_str()).c_str());
-
-			// Extract Mods
-			for (std::string mod : *m_ModFiles)
-			{
-				std::system(string_format("unzip -o \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), mod.c_str(), modsExtractionPath.c_str()).c_str());
-			}
-
-			// Extract Libs
-			for (std::string lib : *m_LibraryFiles)
-			{
-				std::system(string_format("unzip -o \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), lib.c_str(), libsExtractionPath.c_str()).c_str());
-			}
-
-			// Extract File Copies
-			for (FileCopy fileCopy : *m_FileCopies)
-			{
-				std::system(string_format("unzip -o \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), fileCopy.name.c_str(), fileCopiesExtractionPath.c_str()).c_str());
-			}
+			DownloadedQMods->push_back(this);
 		}
 
 		void Install(std::vector<std::string> *installedInBranch = new std::vector<std::string>())
@@ -286,9 +198,9 @@ namespace ModloaderUtils
 					}
 
 					// NOTE: There is no clean up here because the cleanup will occur during the install
-					QMod *downloadedMod = ParseQMod(downloadFileLoc);
+					QMod *downloadedMod = new QMod(downloadFileLoc);
 					if (downloadedMod != nullptr)
-						downloadedMod->Install(installedInBranch);
+						downloadedMod->InstallAsync(installedInBranch);
 				});
 			t.detach();
 		}
@@ -315,82 +227,107 @@ namespace ModloaderUtils
 		const bool Installed() { return m_Installed; }
 		const bool Uninstallable() { return m_Uninstallable; }
 
-		const static std::string GetTempDir(std::string path)
-		{
-			return string_format("/sdcard/BMBFData/Mods/Temp/%s/", GetFileName(path).c_str());
-		}
-
-		const static void CleanupTempDir(std::string name, bool isFile = false)
-		{
-			if (name != "")
-			{
-				if (isFile)
-				{
-					getLogger().info("Cleanup Command: %s", string_format("rm -f \"/sdcard/BMBFData/Mods/Temp/%s\"", name.c_str()).c_str());
-					std::system(string_format("rm -f \"/sdcard/BMBFData/Mods/Temp/%s\"", name.c_str()).c_str()); // Remove The file
-				}
-				else
-				{
-					getLogger().info("Cleanup Command: %s", string_format("rm -f -r \"/sdcard/BMBFData/Mods/Temp/%s/\"", name.c_str()).c_str());
-					std::system(string_format("rm -f -r \"/sdcard/BMBFData/Mods/Temp/%s/\"", name.c_str()).c_str()); // Remove This QMod's Temp Dir
-				}
-			}
-
-			std::system("rmdir \"/sdcard/BMBFData/Mods/Temp/Downloads/\""); // Attempt To Remove the downloads Temp Dir, but only if it's empty
-			std::system("rmdir \"/sdcard/BMBFData/Mods/Temp/\"");			// Attempt To Remove the entire Temp Dir, but only if it's empty
-		}
-
-		static const std::string GetFileName(std::string path, bool removeFileExtension = true, bool returnTrueName = false)
-		{
-			// Get the file name
-
-			std::string fileName = path.substr(path.find_last_of("/\\") + 1);
-
-			if (returnTrueName)
-				return fileName; // This will just return the actual file name, with no modifications
-
-			// Replace all spaces with underscores, as bmbf doesnt like qmods with spaces
-
-			std::replace(fileName.begin(), fileName.end(), ' ', '_');
-
-			// Remove the File Extension (if there is one)
-
-			size_t lastindex = fileName.find_last_of(".");
-			if (lastindex != std::string::npos)
-				fileName = fileName.substr(0, lastindex);
-
-			if (removeFileExtension)
-			{
-				return fileName;
-			}
-
-			// Add the .qmod extension
-
-			fileName += ".qmod";
-
-			return fileName;
-		}
-
 	private:
 		inline static std::mutex InstallLock;
 		inline static std::mutex BmbfConfigLock;
 		inline static std::string AppPackageId = "";
 
-		QMod(std::string name, std::string id, std::string description, std::string author, std::string porter, std::string version, std::string coverImage, std::string packageId, std::string packageVersion, std::vector<std::string> *modFiles, std::vector<std::string> *libraryFiles, std::vector<Dependency> *dependencies, std::vector<FileCopy> *fileCopies, std::string path = "", std::string coverImageFilename = "", bool installed = false, bool uninstallable = true)
-			: m_Name(name), m_Id(id), m_Description(description), m_Author(author), m_Porter(porter), m_Version(version), m_CoverImage(coverImage), m_PackageId(packageId), m_PackageVersion(packageVersion), m_ModFiles(modFiles), m_LibraryFiles(libraryFiles), m_Dependencies(dependencies), m_FileCopies(fileCopies), m_Path(path), m_CoverImageFilename(coverImageFilename), m_Installed(installed), m_Uninstallable(uninstallable) {}
+		void CollectBMBFData(bool verbos = true)
+		{
+			if (strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
+			{
+				getLogger().info("Failed to collect BMBF Data, QMod isn't for Beat Saber! (PackageId: %s)", m_PackageId.c_str());
+				return;
+			}
+
+			// Read the config.json file
+
+			std::ifstream configFile("/sdcard/BMBFData/config.json");
+			ASSERT(configFile.good(), GetFileName(m_Path), verbos);
+
+			std::stringstream configJson;
+			configJson << configFile.rdbuf();
+
+			rapidjson::Document document;
+
+			document.Parse(configJson.str().c_str());
+
+			const auto &mods = document["Mods"].GetArray();
+
+			bool foundMod = false;
+			for (rapidjson::SizeType i = 0; i < mods.Size(); i++)
+			{
+				// Find our mod id, then read the data
+
+				auto &mod = mods[i];
+				std::string id = GET_STRING("Id", mod);
+
+				if (id != m_Id)
+					continue;
+				foundMod = true;
+
+				m_Path = GET_STRING("Path", mod);
+				m_CoverImageFilename = GET_STRING("CoverImageFilename", mod);
+				m_Installed = GET_BOOL("Installed", mod);
+				m_Uninstallable = GET_BOOL("Uninstallable", mod);
+			}
+
+			// Couldnt Find existing BMBF Data, So just set default values;
+			if (!foundMod)
+			{
+				m_CoverImageFilename = "";
+				m_Installed = false;
+				m_Uninstallable = true;
+			}
+		}
+
+		void ExtractQMod()
+		{
+			std::string tmpDir = GetTempDir(m_Path);
+			std::string modsExtractionPath = tmpDir + "Mods/";
+			std::string libsExtractionPath = tmpDir + "Libs/";
+			std::string fileCopiesExtractionPath = tmpDir + "FileCopies/";
+
+			// Create dirs
+			std::system(string_format("mkdir -p \"%s\"", modsExtractionPath.c_str()).c_str());
+			std::system(string_format("mkdir -p \"%s\"", libsExtractionPath.c_str()).c_str());
+			std::system(string_format("mkdir -p \"%s\"", fileCopiesExtractionPath.c_str()).c_str());
+
+			// Extract Mods
+			for (std::string mod : *m_ModFiles)
+			{
+				std::system(string_format("unzip \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), mod.c_str(), modsExtractionPath.c_str()).c_str());
+			}
+
+			// Extract Libs
+			for (std::string lib : *m_LibraryFiles)
+			{
+				std::system(string_format("unzip \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), lib.c_str(), libsExtractionPath.c_str()).c_str());
+			}
+
+			// Extract File Copies
+			for (FileCopy fileCopy : *m_FileCopies)
+			{
+				std::system(string_format("unzip \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), fileCopy.name.c_str(), fileCopiesExtractionPath.c_str()).c_str());
+			}
+		}
 
 		void InstallAsync(std::vector<std::string> *installedInBranch)
 		{
 			std::lock_guard<std::mutex> guard(InstallLock);
-
-			if (m_Installed)
+			
+			if (m_Installed || std::count(DownloadedQModIds->begin(), DownloadedQModIds->end(), m_Id))
 			{
 				getLogger().info("Mod \"%s\" Already Installed!", m_Id.c_str());
 				return;
 			}
 
 			installedInBranch->push_back(m_Id); // Add to the installed tree so that dependencies further down on us will trigger a recursive install error
-			m_Installed = true;					// We say that the mod is installed now to prevent multiple installs of the same mod a mod is a dependency. If the install fails we can then
+
+			// We say that the mod is installed now to prevent multiple installs of the same mod If the install fails we can then can say its uninstalled later
+
+			m_Installed = true;
+			DownloadedQModIds->push_back(m_Id);
 
 			for (Dependency dependency : *m_Dependencies)
 			{
@@ -399,6 +336,7 @@ namespace ModloaderUtils
 					getLogger().error("Failed to install \"%s\" as one of its dependecies (%s) also failed to install", m_Id.c_str(), dependency.id.c_str());
 
 					m_Installed = false;
+					std::remove(DownloadedQModIds->begin(), DownloadedQModIds->end(), m_Id);
 					return;
 				}
 			}
@@ -439,7 +377,6 @@ namespace ModloaderUtils
 			// If QMod is for Beat Saber, then Update its BMBF Data
 			if (!strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
 			{
-
 				UpdateBMBFData();
 			}
 
@@ -520,7 +457,7 @@ namespace ModloaderUtils
 				return false;
 			}
 
-			downloadedDependency = ParseQMod(downloadFileLoc);
+			downloadedDependency = new QMod(downloadFileLoc);
 
 			if (downloadedDependency == nullptr)
 			{
@@ -575,11 +512,11 @@ namespace ModloaderUtils
 			// Prevents multiple threads writing to the file at the same time
 			std::lock_guard<std::mutex> guard(BmbfConfigLock);
 
-			getLogger().info("Updating BMBF Info");
+			getLogger().info("Updating BMBF Info for \"%s\"", m_Id.c_str());
 
 			// Read the config.json file
 			std::ifstream configFile("/sdcard/BMBFData/config.json");
-			ASSERT_VOID(configFile.good(), GetFileName(m_Path), verbos);
+			ASSERT(configFile.good(), GetFileName(m_Path), verbos);
 
 			std::stringstream configJson;
 			configJson << configFile.rdbuf();
@@ -607,7 +544,7 @@ namespace ModloaderUtils
 
 				std::system(string_format("mkdir -p \"%s\"", tmpDir.c_str()).c_str());
 
-				std::system(string_format("unzip -o \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), m_CoverImage.c_str(), tmpDir.c_str()).c_str());
+				std::system(string_format("unzip \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), m_CoverImage.c_str(), tmpDir.c_str()).c_str());
 
 				std::system(string_format("mv -f \"%s/%s\" \"sdcard/BMBFData/Mods/%s_%s\"", tmpDir.c_str(), m_CoverImage.c_str(), displayName.c_str(), m_CoverImage.c_str()).c_str());
 
@@ -625,7 +562,7 @@ namespace ModloaderUtils
 					continue;
 				foundMod = true;
 
-				getLogger().info("Found existing BMBF Data, Updating It...");
+				getLogger().info("Found existing BMBF Data for \"%s\", Updating It...", m_Id.c_str());
 
 				mod.SetObject();
 				UpdateBMBFJSONData(mod, document.GetAllocator());
@@ -634,7 +571,7 @@ namespace ModloaderUtils
 			// BMBF Data could not be found, create the object first
 			if (!foundMod)
 			{
-				getLogger().info("No BMBF Data Found! Creating It Now...");
+				getLogger().info("No BMBF Data Found for \"%s\"! Creating It Now...", m_Id.c_str());
 
 				rapidjson::Value modDataObject = rapidjson::Value(rapidjson::Type::kObjectType);
 
@@ -644,7 +581,7 @@ namespace ModloaderUtils
 				mods.PushBack(modDataObject, document.GetAllocator());
 			}
 
-			getLogger().info("Updated Data! Saving...");
+			getLogger().info("Updated BMBF Data for \"%s\"! Saving...", m_Id.c_str());
 
 			// Save To Buffer
 
@@ -659,7 +596,7 @@ namespace ModloaderUtils
 			out << buffer.GetString();
 			out.close();
 
-			getLogger().info("Saved!");
+			getLogger().info("Saved BMBF Data for \"%s\"!", m_Id.c_str());
 		}
 
 		static void CollectAppPackageId()
@@ -669,6 +606,60 @@ namespace ModloaderUtils
 				JNIEnv *env = JNIUtils::GetJNIEnv();
 				AppPackageId = JNIUtils::ToString(env, JNIUtils::GetPackageName(env));
 			}
+		}
+
+		const static std::string GetTempDir(std::string path)
+		{
+			return string_format("/sdcard/BMBFData/Mods/Temp/%s/", GetFileName(path).c_str());
+		}
+
+		const static void CleanupTempDir(std::string name, bool isFile = false)
+		{
+			if (name != "")
+			{
+				if (isFile)
+				{
+					std::system(string_format("rm -f \"/sdcard/BMBFData/Mods/Temp/%s\"", name.c_str()).c_str()); // Remove The file
+				}
+				else
+				{
+					std::system(string_format("rm -f -r \"/sdcard/BMBFData/Mods/Temp/%s/\"", name.c_str()).c_str()); // Remove This QMod's Temp Dir
+				}
+			}
+
+			std::system("rmdir \"/sdcard/BMBFData/Mods/Temp/Downloads/\""); // Attempt To Remove the downloads Temp Dir, but only if it's empty
+			std::system("rmdir \"/sdcard/BMBFData/Mods/Temp/\"");			// Attempt To Remove the entire Temp Dir, but only if it's empty
+		}
+
+		static const std::string GetFileName(std::string path, bool removeFileExtension = true, bool returnTrueName = false)
+		{
+			// Get the file name
+
+			std::string fileName = path.substr(path.find_last_of("/\\") + 1);
+
+			if (returnTrueName)
+				return fileName; // This will just return the actual file name, with no modifications
+
+			// Replace all spaces with underscores, as bmbf doesnt like qmods with spaces
+
+			std::replace(fileName.begin(), fileName.end(), ' ', '_');
+
+			// Remove the File Extension (if there is one)
+
+			size_t lastindex = fileName.find_last_of(".");
+			if (lastindex != std::string::npos)
+				fileName = fileName.substr(0, lastindex);
+
+			if (removeFileExtension)
+			{
+				return fileName;
+			}
+
+			// Add the .qmod extension
+
+			fileName += ".qmod";
+
+			return fileName;
 		}
 
 		std::string m_Name;
@@ -682,6 +673,8 @@ namespace ModloaderUtils
 		std::string m_PackageId;
 		std::string m_PackageVersion;
 
+		std::string m_Path;
+
 		std::vector<std::string> *m_ModFiles;
 		std::vector<std::string> *m_LibraryFiles;
 		std::vector<Dependency> *m_Dependencies;
@@ -689,7 +682,6 @@ namespace ModloaderUtils
 
 		// BMBF Stuff
 
-		std::string m_Path;
 		std::string m_CoverImageFilename;
 
 		bool m_Installed;
