@@ -261,24 +261,38 @@ namespace ModloaderUtils
 
 		void Install(std::vector<std::string>* installedInBranch = new std::vector<std::string>())
 		{
-			if (m_Installed)
-			{
-				getLogger().info("Mod \"%s\" Already Installed!", m_Id.c_str());
-				return;
+			if (AppPackageId == "") {
+				JNIEnv* env = JNIUtils::GetJNIEnv();
+				AppPackageId = JNIUtils::ToString(env, JNIUtils::GetPackageName(env));
 			}
 
-			JNIEnv* env = JNIUtils::GetJNIEnv();
-			std::string appPackageId = JNIUtils::ToString(env, JNIUtils::GetPackageName(env));
-
-			if (m_PackageId != appPackageId)
+			if (m_PackageId != AppPackageId)
 			{
-				getLogger().info("Mod \"%s\" Is not built for the package \"%s\", but instead is built for \"%s\"!", m_Id.c_str(), appPackageId.c_str(), m_PackageId.c_str());
+				getLogger().info("Mod \"%s\" Is not built for the package \"%s\", but instead is built for \"%s\"!", m_Id.c_str(), AppPackageId.c_str(), m_PackageId.c_str());
 				return;
 			}
 
 			getLogger().info("Installing mod \"%s\"", m_Id.c_str());
 
 			auto t = std::thread(&QMod::InstallAsync, this, installedInBranch);
+			t.detach();
+		}
+
+		static void InstallFromUrl(std::string fileName, std::string url, std::vector<std::string>* installedInBranch = new std::vector<std::string>()) {
+			auto t = std::thread(
+				[fileName, url, installedInBranch] {
+					std::string downloadFileLoc = string_format("/sdcard/BMBFData/Mods/Temp/Downloads/%s", fileName.c_str());
+					
+					if (!DownloadFile(fileName, url, downloadFileLoc)) {
+						return;
+						CleanupTempDir(string_format("Downloads/%s", fileName.c_str()).c_str(), true);
+					}
+
+					// NOTE: There is no clean up here because the cleanup will occur during the install
+					QMod* downloadedMod = ParseQMod(downloadFileLoc);
+					if (downloadedMod != nullptr) downloadedMod->Install(installedInBranch);
+				}
+			);
 			t.detach();
 		}
 
@@ -349,12 +363,22 @@ namespace ModloaderUtils
 		}
 
 	private:
+		inline static std::mutex InstallLock;
 		inline static std::mutex BmbfConfigLock;
+		inline static std::string AppPackageId = "";
 
 		QMod(std::string name, std::string id, std::string description, std::string author, std::string porter, std::string version, std::string coverImage, std::string packageId, std::string packageVersion, std::vector<std::string> *modFiles, std::vector<std::string> *libraryFiles, std::vector<Dependency> *dependencies, std::vector<FileCopy> *fileCopies, std::string path = "", std::string coverImageFilename = "", bool installed = false, bool uninstallable = true)
 			: m_Name(name), m_Id(id), m_Description(description), m_Author(author), m_Porter(porter), m_Version(version), m_CoverImage(coverImage), m_PackageId(packageId), m_PackageVersion(packageVersion), m_ModFiles(modFiles), m_LibraryFiles(libraryFiles), m_Dependencies(dependencies), m_FileCopies(fileCopies), m_Path(path), m_CoverImageFilename(coverImageFilename), m_Installed(installed), m_Uninstallable(uninstallable) {}
 
 		void InstallAsync(std::vector<std::string>* installedInBranch) {
+			std::lock_guard<std::mutex> guard(InstallLock);
+
+			if (m_Installed)
+			{
+				getLogger().info("Mod \"%s\" Already Installed!", m_Id.c_str());
+				return;
+			}
+
 			installedInBranch->push_back(m_Id); // Add to the installed tree so that dependencies further down on us will trigger a recursive install error
 			m_Installed = true; // We say that the mod is installed now to prevent multiple installs of the same mod a mod is a dependency. If the install fails we can then 
 
@@ -410,10 +434,48 @@ namespace ModloaderUtils
 			CleanupTempDir(GetFileName(m_Path));
 		}
 
+		// Write Function (https://curl.se/libcurl/c/url2file.html)
 		static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream)
 		{
 			size_t written = fwrite(ptr, size, nmemb, (FILE *)stream);
 			return written;
+		}
+
+		static bool DownloadFile(std::string fileName, std::string url, std::string downloadFileLoc) {
+			CURL* curl = curl_easy_init();
+			FILE* file;
+
+			if (curl) {
+				getLogger().info("Downloading file \"%s\"", fileName.c_str());
+				
+				CURLcode res;
+
+				std::system("mkdir -p \"/sdcard/BMBFData/Mods/Temp/Downloads/\"");
+				file = fopen(downloadFileLoc.c_str(), "wb");
+
+				curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+				curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+				curl_easy_setopt(curl, CURLOPT_WRITEDATA, file);
+				curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false);
+
+				// Follow HTTP redirects if necessary.
+                curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+
+				res = curl_easy_perform(curl);
+				curl_easy_cleanup(curl);
+				fclose(file);
+
+				if (res != CURLE_OK) {
+					getLogger().error("Curl Failed to download \"%s\" from Url \"%s\"! Error: (%i) %s", fileName.c_str(),url.c_str(), res, curl_easy_strerror(res));
+
+					return false;
+				}
+			} else {
+				getLogger().error("Curl failed to initialize for file \"%s\". No futher info was given", fileName.c_str());
+				return false;
+			}
+
+			return true;
 		}
 
 		bool PrepareDependency(Dependency dependency, std::vector<std::string>* installedInBranch) {
@@ -468,52 +530,17 @@ namespace ModloaderUtils
 			// If we didnt return, then the correct dependency version isnt installed and we have a url, so we attempt to download it now
 
 			QMod* downloadedDependency = nullptr;
-			FILE* file;
-			std::string downloadFileLoc = string_format("/sdcard/BMBFData/Mods/Temp/Downloads/%s.qmod", dependency.id.c_str());
+			std::string downloadFileLoc = string_format("/sdcard/BMBFData/Mods/Temp/Downloads/%s", dependency.id.c_str());
 
 			// Putting cleanup function in lambda cus its messy and i dont wanna copy it everywhere
 			auto CleanupFunction = [&](){ CleanupTempDir(string_format("Downloads/%s", dependency.id.c_str()).c_str(), true); };
 
-			// // Write Function (https://curl.se/libcurl/c/url2file.html)
-			// auto write_data = [](void *ptr, size_t size, size_t nmemb, void *stream)
-			// {
-			// 	size_t written = fwrite(ptr, size, nmemb, (FILE *)stream);
-			// 	return written;
-			// };
-
-			CURL* curl = curl_easy_init();
-			if (curl) {
-				getLogger().info("Downloading dependency \"%s\"", dependency.id.c_str());
-				
-				CURLcode res;
-
-				std::system("mkdir -p \"/sdcard/BMBFData/Mods/Temp/Downloads/\"");
-				file = fopen(downloadFileLoc.c_str(), "wb");
-
-				curl_easy_setopt(curl, CURLOPT_URL, dependency.downloadIfMissing.c_str());
-				curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
-				curl_easy_setopt(curl, CURLOPT_WRITEDATA, file);
-				curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false);
-
-				// Follow HTTP redirects if necessary.
-                curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-
-				res = curl_easy_perform(curl);
-				curl_easy_cleanup(curl);
-				fclose(file);
-
-				if (res != CURLE_OK) {
-					getLogger().error("Curl Failed to download \"%s\" from Url \"%s\"! Error: (%i) %s", dependency.id.c_str(), dependency.downloadIfMissing.c_str(), res, curl_easy_strerror(res));
-
-					CleanupFunction();
-					return false;
-				}
-
-				downloadedDependency = ParseQMod(downloadFileLoc);
-			} else {
-				getLogger().error("Curl failed to initialize for dependency \"%s\". No futher info was given", dependency.id.c_str());
+			if (!DownloadFile(dependency.id, dependency.downloadIfMissing, downloadFileLoc)) {
+				CleanupFunction();
 				return false;
 			}
+
+			downloadedDependency = ParseQMod(downloadFileLoc);
 
 			if (downloadedDependency == nullptr) {
 				getLogger().error("Failed to parse QMod for dependency \"%s\"", dependency.id.c_str());
