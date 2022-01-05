@@ -10,10 +10,9 @@
 
 #include "cpp-semver/shared/cpp-semver.hpp"
 
-#include "libcurl/shared/curl.h"
-
 #include "modloader-utils/shared/Types/Dependency.hpp"
 #include "modloader-utils/shared/Types/FileCopy.hpp"
+#include "modloader-utils/shared/WebUtils.hpp"
 
 #include "jni-utils/shared/JNIUtils.hpp"
 
@@ -23,23 +22,23 @@
 #include "beatsaber-hook/shared/rapidjson/include/rapidjson/error/error.h"
 #include "beatsaber-hook/shared/rapidjson/include/rapidjson/error/en.h"
 
-#define ASSERT(condition, path, verbos)                                                                       \
+#define ASSERT(condition, name, verbos)                                                                           \
 	if (!(condition))                                                                                             \
 	{                                                                                                             \
 		if (verbos)                                                                                               \
-			getLogger().info("QMOD ASSERT [%s:%i]: Condition \"%s\" Failed!", __FILE__, __LINE__, "" #condition); \
-		std::system(string_format("rm -r \"%s\"", GetTempDir(path).c_str()).c_str());         \
-		std::system(string_format("rmdir \"/sdcard/BMBFData/Mods/Temp/\"").c_str());                              \
+			getLogger().info("[%s] QMOD ASSERT [%s:%i]: Condition \"%s\" Failed!", name.c_str(), __FILE__, __LINE__, "" #condition); \
+		CleanupTempDir(name);                                                                                     \
+		CleanupTempDir(string_format("Downloads/%s", name.c_str()), true);                                        \
                                                                                                                   \
 		return nullptr;                                                                                           \
 	}
-#define ASSERT_VOID(condition, path, verbos)                                                                  \
+#define ASSERT_VOID(condition, name, verbos)                                                                      \
 	if (!(condition))                                                                                             \
 	{                                                                                                             \
 		if (verbos)                                                                                               \
-			getLogger().info("QMOD ASSERT [%s:%i]: Condition \"%s\" Failed!", __FILE__, __LINE__, "" #condition); \
-		std::system(string_format("rm -r \"%s\"", GetTempDir(path).c_str()).c_str());         \
-		std::system(string_format("rmdir \"/sdcard/BMBFData/Mods/Temp/\"").c_str());                              \
+			getLogger().info("[%s] QMOD ASSERT [%s:%i]: Condition \"%s\" Failed!", name.c_str(), __FILE__, __LINE__, "" #condition); \
+		CleanupTempDir(name);                                                                                     \
+		CleanupTempDir(string_format("Downloads/%s", name.c_str()), true);                                        \
                                                                                                                   \
 		return;                                                                                                   \
 	}
@@ -119,28 +118,27 @@ namespace ModloaderUtils
 	class QMod
 	{
 	public:
-		inline static std::vector<QMod*>* DownloadedQMods = new std::vector<QMod*>();
+		inline static std::vector<QMod *> *DownloadedQMods = new std::vector<QMod *>();
 
-		static QMod* ParseQMod(std::string fileDir, bool verbos = true)
+		static QMod *ParseQMod(std::string fileDir, bool verbos = true)
 		{
 			std::string tmpDir = GetTempDir(fileDir);
 
 			// Create Temp Dir To Read the mod.json
 
-			std::system(string_format("rm -r \"%s\"", tmpDir.c_str()).c_str());
 			std::system(string_format("mkdir -p \"%s\"", tmpDir.c_str()).c_str());
-			std::system(string_format("unzip \"%s\" mod.json -d \"%s\"", fileDir.c_str(), tmpDir.c_str()).c_str());
+			std::system(string_format("unzip -o \"%s\" mod.json -d \"%s\"", fileDir.c_str(), tmpDir.c_str()).c_str());
 
 			// Read the mod.json
 
 			std::ifstream qmodFile(string_format("%smod.json", tmpDir.c_str()).c_str());
-			ASSERT(qmodFile.good(), fileDir, verbos);
+			//ASSERT(qmodFile.good(), GetFileName(fileDir), verbos);
 
 			std::stringstream qmodJson;
 			qmodJson << qmodFile.rdbuf();
 
 			rapidjson::Document document;
-			ASSERT(!document.Parse(qmodJson.str().c_str()).HasParseError(), fileDir, verbos);
+			ASSERT(!document.Parse(qmodJson.str().c_str()).HasParseError(), GetFileName(fileDir), verbos);
 
 			// Clean Up Temp Dirs
 			CleanupTempDir(GetFileName(fileDir));
@@ -189,7 +187,7 @@ namespace ModloaderUtils
 			// Read the config.json file
 
 			std::ifstream configFile("/sdcard/BMBFData/config.json");
-			ASSERT_VOID(configFile.good(), m_Path, verbos);
+			ASSERT_VOID(configFile.good(), GetFileName(m_Path), verbos);
 
 			std::stringstream configJson;
 			configJson << configFile.rdbuf();
@@ -232,9 +230,6 @@ namespace ModloaderUtils
 			std::string libsExtractionPath = tmpDir + "Libs/";
 			std::string fileCopiesExtractionPath = tmpDir + "FileCopies/";
 
-			// Remove existing files
-			std::system(string_format("rm -r \"%s\"", tmpDir.c_str()).c_str());
-
 			// Create dirs
 			std::system(string_format("mkdir -p \"%s\"", modsExtractionPath.c_str()).c_str());
 			std::system(string_format("mkdir -p \"%s\"", libsExtractionPath.c_str()).c_str());
@@ -243,28 +238,25 @@ namespace ModloaderUtils
 			// Extract Mods
 			for (std::string mod : *m_ModFiles)
 			{
-				std::system(string_format("unzip \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), mod.c_str(), modsExtractionPath.c_str()).c_str());
+				std::system(string_format("unzip -o \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), mod.c_str(), modsExtractionPath.c_str()).c_str());
 			}
 
 			// Extract Libs
 			for (std::string lib : *m_LibraryFiles)
 			{
-				std::system(string_format("unzip \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), lib.c_str(), libsExtractionPath.c_str()).c_str());
+				std::system(string_format("unzip -o \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), lib.c_str(), libsExtractionPath.c_str()).c_str());
 			}
 
 			// Extract File Copies
 			for (FileCopy fileCopy : *m_FileCopies)
 			{
-				std::system(string_format("unzip \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), fileCopy.name.c_str(), fileCopiesExtractionPath.c_str()).c_str());
+				std::system(string_format("unzip -o \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), fileCopy.name.c_str(), fileCopiesExtractionPath.c_str()).c_str());
 			}
 		}
 
-		void Install(std::vector<std::string>* installedInBranch = new std::vector<std::string>())
+		void Install(std::vector<std::string> *installedInBranch = new std::vector<std::string>())
 		{
-			if (AppPackageId == "") {
-				JNIEnv* env = JNIUtils::GetJNIEnv();
-				AppPackageId = JNIUtils::ToString(env, JNIUtils::GetPackageName(env));
-			}
+			CollectAppPackageId();
 
 			if (m_PackageId != AppPackageId)
 			{
@@ -278,21 +270,26 @@ namespace ModloaderUtils
 			t.detach();
 		}
 
-		static void InstallFromUrl(std::string fileName, std::string url, std::vector<std::string>* installedInBranch = new std::vector<std::string>()) {
+		static void InstallFromUrl(std::string fileName, std::string url, std::vector<std::string> *installedInBranch = new std::vector<std::string>())
+		{
+			CollectAppPackageId();
+
 			auto t = std::thread(
-				[fileName, url, installedInBranch] {
+				[fileName, url, installedInBranch]
+				{
 					std::string downloadFileLoc = string_format("/sdcard/BMBFData/Mods/Temp/Downloads/%s", fileName.c_str());
-					
-					if (!DownloadFile(fileName, url, downloadFileLoc)) {
+
+					if (!WebUtils::DownloadFile(fileName, url, downloadFileLoc))
+					{
 						return;
 						CleanupTempDir(string_format("Downloads/%s", fileName.c_str()).c_str(), true);
 					}
 
 					// NOTE: There is no clean up here because the cleanup will occur during the install
-					QMod* downloadedMod = ParseQMod(downloadFileLoc);
-					if (downloadedMod != nullptr) downloadedMod->Install(installedInBranch);
-				}
-			);
+					QMod *downloadedMod = ParseQMod(downloadFileLoc);
+					if (downloadedMod != nullptr)
+						downloadedMod->Install(installedInBranch);
+				});
 			t.detach();
 		}
 
@@ -318,22 +315,29 @@ namespace ModloaderUtils
 		const bool Installed() { return m_Installed; }
 		const bool Uninstallable() { return m_Uninstallable; }
 
-		const static std::string GetTempDir(std::string path) {
+		const static std::string GetTempDir(std::string path)
+		{
 			return string_format("/sdcard/BMBFData/Mods/Temp/%s/", GetFileName(path).c_str());
 		}
 
-		const static void CleanupTempDir(std::string fileName, bool isFile = false)
+		const static void CleanupTempDir(std::string name, bool isFile = false)
 		{
-			if (fileName != "") {
-				if (isFile){
-					std::system(string_format("rm \"/sdcard/BMBFData/Mods/Temp/%s\"", fileName.c_str()).c_str()); // Remove The file
-				} else {
-					std::system(string_format("rm -r \"/sdcard/BMBFData/Mods/Temp/%s/\"", fileName.c_str()).c_str()); // Remove This QMod's Temp Dir
+			if (name != "")
+			{
+				if (isFile)
+				{
+					getLogger().info("Cleanup Command: %s", string_format("rm -f \"/sdcard/BMBFData/Mods/Temp/%s\"", name.c_str()).c_str());
+					std::system(string_format("rm -f \"/sdcard/BMBFData/Mods/Temp/%s\"", name.c_str()).c_str()); // Remove The file
+				}
+				else
+				{
+					getLogger().info("Cleanup Command: %s", string_format("rm -f -r \"/sdcard/BMBFData/Mods/Temp/%s/\"", name.c_str()).c_str());
+					std::system(string_format("rm -f -r \"/sdcard/BMBFData/Mods/Temp/%s/\"", name.c_str()).c_str()); // Remove This QMod's Temp Dir
 				}
 			}
 
-			std::system("rmdir \"/sdcard/BMBFData/Mods/Temp/Downloads/\"");										  // Attempt To Remove the downloads Temp Dir, but only if it's empty
-			std::system("rmdir \"/sdcard/BMBFData/Mods/Temp/\"");										  // Attempt To Remove the entire Temp Dir, but only if it's empty
+			std::system("rmdir \"/sdcard/BMBFData/Mods/Temp/Downloads/\""); // Attempt To Remove the downloads Temp Dir, but only if it's empty
+			std::system("rmdir \"/sdcard/BMBFData/Mods/Temp/\"");			// Attempt To Remove the entire Temp Dir, but only if it's empty
 		}
 
 		static const std::string GetFileName(std::string path, bool removeFileExtension = true, bool returnTrueName = false)
@@ -342,7 +346,8 @@ namespace ModloaderUtils
 
 			std::string fileName = path.substr(path.find_last_of("/\\") + 1);
 
-			if (returnTrueName) return fileName; // This will just return the actual file name, with no modifications
+			if (returnTrueName)
+				return fileName; // This will just return the actual file name, with no modifications
 
 			// Replace all spaces with underscores, as bmbf doesnt like qmods with spaces
 
@@ -351,9 +356,13 @@ namespace ModloaderUtils
 			// Remove the File Extension (if there is one)
 
 			size_t lastindex = fileName.find_last_of(".");
-			if (lastindex != std::string::npos) fileName = fileName.substr(0, lastindex);
+			if (lastindex != std::string::npos)
+				fileName = fileName.substr(0, lastindex);
 
-			if (removeFileExtension) { return fileName; }
+			if (removeFileExtension)
+			{
+				return fileName;
+			}
 
 			// Add the .qmod extension
 
@@ -370,7 +379,8 @@ namespace ModloaderUtils
 		QMod(std::string name, std::string id, std::string description, std::string author, std::string porter, std::string version, std::string coverImage, std::string packageId, std::string packageVersion, std::vector<std::string> *modFiles, std::vector<std::string> *libraryFiles, std::vector<Dependency> *dependencies, std::vector<FileCopy> *fileCopies, std::string path = "", std::string coverImageFilename = "", bool installed = false, bool uninstallable = true)
 			: m_Name(name), m_Id(id), m_Description(description), m_Author(author), m_Porter(porter), m_Version(version), m_CoverImage(coverImage), m_PackageId(packageId), m_PackageVersion(packageVersion), m_ModFiles(modFiles), m_LibraryFiles(libraryFiles), m_Dependencies(dependencies), m_FileCopies(fileCopies), m_Path(path), m_CoverImageFilename(coverImageFilename), m_Installed(installed), m_Uninstallable(uninstallable) {}
 
-		void InstallAsync(std::vector<std::string>* installedInBranch) {
+		void InstallAsync(std::vector<std::string> *installedInBranch)
+		{
 			std::lock_guard<std::mutex> guard(InstallLock);
 
 			if (m_Installed)
@@ -380,11 +390,12 @@ namespace ModloaderUtils
 			}
 
 			installedInBranch->push_back(m_Id); // Add to the installed tree so that dependencies further down on us will trigger a recursive install error
-			m_Installed = true; // We say that the mod is installed now to prevent multiple installs of the same mod a mod is a dependency. If the install fails we can then 
+			m_Installed = true;					// We say that the mod is installed now to prevent multiple installs of the same mod a mod is a dependency. If the install fails we can then
 
 			for (Dependency dependency : *m_Dependencies)
 			{
-			    if (!PrepareDependency(dependency, installedInBranch)) {
+				if (!PrepareDependency(dependency, installedInBranch))
+				{
 					getLogger().error("Failed to install \"%s\" as one of its dependecies (%s) also failed to install", m_Id.c_str(), dependency.id.c_str());
 
 					m_Installed = false;
@@ -401,12 +412,14 @@ namespace ModloaderUtils
 			std::string fileCopiesExtractionPath = tmpDir + "FileCopies/";
 
 			// Copy the Mods files to the Mods folder
-			for (std::string mod : *m_ModFiles) {
+			for (std::string mod : *m_ModFiles)
+			{
 				std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/mods/\"", modsExtractionPath.c_str(), mod.c_str()).c_str());
 			}
 
 			// Copy the Libs files to the Libs folder
-			for (std::string lib : *m_LibraryFiles) {
+			for (std::string lib : *m_LibraryFiles)
+			{
 				std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/libs/\"", libsExtractionPath.c_str(), lib.c_str()).c_str());
 			}
 
@@ -434,82 +447,45 @@ namespace ModloaderUtils
 			CleanupTempDir(GetFileName(m_Path));
 		}
 
-		// Write Function (https://curl.se/libcurl/c/url2file.html)
-		static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream)
+		bool PrepareDependency(Dependency dependency, std::vector<std::string> *installedInBranch)
 		{
-			size_t written = fwrite(ptr, size, nmemb, (FILE *)stream);
-			return written;
-		}
-
-		static bool DownloadFile(std::string fileName, std::string url, std::string downloadFileLoc) {
-			CURL* curl = curl_easy_init();
-			FILE* file;
-
-			if (curl) {
-				getLogger().info("Downloading file \"%s\"", fileName.c_str());
-				
-				CURLcode res;
-
-				std::system("mkdir -p \"/sdcard/BMBFData/Mods/Temp/Downloads/\"");
-				file = fopen(downloadFileLoc.c_str(), "wb");
-
-				curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-				curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
-				curl_easy_setopt(curl, CURLOPT_WRITEDATA, file);
-				curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false);
-
-				// Follow HTTP redirects if necessary.
-                curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-
-				res = curl_easy_perform(curl);
-				curl_easy_cleanup(curl);
-				fclose(file);
-
-				if (res != CURLE_OK) {
-					getLogger().error("Curl Failed to download \"%s\" from Url \"%s\"! Error: (%i) %s", fileName.c_str(),url.c_str(), res, curl_easy_strerror(res));
-
-					return false;
-				}
-			} else {
-				getLogger().error("Curl failed to initialize for file \"%s\". No futher info was given", fileName.c_str());
-				return false;
-			}
-
-			return true;
-		}
-
-		bool PrepareDependency(Dependency dependency, std::vector<std::string>* installedInBranch) {
 			getLogger().info("Preparing dependency of %s version %s", dependency.id.c_str(), dependency.version.c_str());
-		
+
 			// Try to see if there's a recurssive dependency
 			auto it = find(installedInBranch->begin(), installedInBranch->end(), dependency.id);
-			if (it != installedInBranch->end()) {
+			if (it != installedInBranch->end())
+			{
 				// Log the recursive error
 				int existingIndex = it - installedInBranch->begin();
 				std::string errorMsg = "";
 
 				for (std::string mod : *installedInBranch)
-                {
-                    errorMsg += string_format("\"%s\" -> ", mod.c_str());
-                }
+				{
+					errorMsg += string_format("\"%s\" -> ", mod.c_str());
+				}
 				errorMsg += dependency.id;
 
 				getLogger().error("Recursive dependency detected: %s", errorMsg.c_str());
 				return false;
 			}
 
-			QMod* existing = nullptr;
-			for (QMod* qmod : *DownloadedQMods) {
-				if (qmod->m_Id == dependency.id) {
+			QMod *existing = nullptr;
+			for (QMod *qmod : *DownloadedQMods)
+			{
+				if (qmod->m_Id == dependency.id)
+				{
 					existing = qmod;
 				}
 			}
 
-			if (existing != nullptr) {
-				if (semver::satisfies(existing->m_Version, dependency.version)) {
+			if (existing != nullptr)
+			{
+				if (semver::satisfies(existing->m_Version, dependency.version))
+				{
 					getLogger().info("Dependency is already downloaded and fits the version range \"%s\"", dependency.version.c_str());
 
-					if (!existing->m_Installed) {
+					if (!existing->m_Installed)
+					{
 						getLogger().info("Installing Dependency...");
 						existing->Install(installedInBranch);
 					}
@@ -517,32 +493,37 @@ namespace ModloaderUtils
 					return true;
 				}
 
-				if (dependency.downloadIfMissing == "") {
+				if (dependency.downloadIfMissing == "")
+				{
 					getLogger().error("Dependency with ID \"%s\" is already installed but with an incorrect version (\"%s\" does not intersect \"%s\"). Upgrading was not possible as there was no download link provided", dependency.id.c_str(), existing->m_Version.c_str(), dependency.version.c_str());
 					return false;
 				}
-			} else if (dependency.downloadIfMissing == "")
-            {
-                getLogger().error("Dependency \"%s\" is not installed, and the mod depending on it does not specify a download path if missing", dependency.id.c_str());
+			}
+			else if (dependency.downloadIfMissing == "")
+			{
+				getLogger().error("Dependency \"%s\" is not installed, and the mod depending on it does not specify a download path if missing", dependency.id.c_str());
 				return false;
-            }
+			}
 
 			// If we didnt return, then the correct dependency version isnt installed and we have a url, so we attempt to download it now
 
-			QMod* downloadedDependency = nullptr;
+			QMod *downloadedDependency = nullptr;
 			std::string downloadFileLoc = string_format("/sdcard/BMBFData/Mods/Temp/Downloads/%s", dependency.id.c_str());
 
 			// Putting cleanup function in lambda cus its messy and i dont wanna copy it everywhere
-			auto CleanupFunction = [&](){ CleanupTempDir(string_format("Downloads/%s", dependency.id.c_str()).c_str(), true); };
+			auto CleanupFunction = [&]()
+			{ CleanupTempDir(string_format("Downloads/%s", dependency.id.c_str()).c_str(), true); };
 
-			if (!DownloadFile(dependency.id, dependency.downloadIfMissing, downloadFileLoc)) {
+			if (!WebUtils::DownloadFile(dependency.id, dependency.downloadIfMissing, downloadFileLoc))
+			{
 				CleanupFunction();
 				return false;
 			}
 
 			downloadedDependency = ParseQMod(downloadFileLoc);
 
-			if (downloadedDependency == nullptr) {
+			if (downloadedDependency == nullptr)
+			{
 				getLogger().error("Failed to parse QMod for dependency \"%s\"", dependency.id.c_str());
 
 				CleanupFunction();
@@ -550,16 +531,18 @@ namespace ModloaderUtils
 			}
 
 			// Sanity checks that the download link actually pointed to the right mod
-			if (dependency.id != downloadedDependency->m_Id) {
+			if (dependency.id != downloadedDependency->m_Id)
+			{
 				getLogger().error("Downloaded dependency had Id \"%s\", whereas the dependency stated ID \"%s\"", downloadedDependency->m_Id.c_str(), dependency.id.c_str());
-				
+
 				CleanupFunction();
 				return false;
 			}
 
-			if (!semver::satisfies(downloadedDependency->m_Version, dependency.version)) {
+			if (!semver::satisfies(downloadedDependency->m_Version, dependency.version))
+			{
 				getLogger().error("Downloaded dependency \"%s\" v%s was not within the version range stated in the dependency info (%s)", downloadedDependency->m_Id.c_str(), downloadedDependency->m_Version.c_str(), dependency.version.c_str());
-				
+
 				CleanupFunction();
 				return false;
 			}
@@ -570,7 +553,7 @@ namespace ModloaderUtils
 			return true;
 		}
 
-		void UpdateBMBFJSONData(auto& mod, auto& allocator)
+		void UpdateBMBFJSONData(auto &mod, auto &allocator)
 		{
 			ADD_STRING_MEMBER("Id", m_Id, mod, allocator);
 			ADD_STRING_MEMBER("Path", m_Path, mod, allocator);
@@ -596,7 +579,7 @@ namespace ModloaderUtils
 
 			// Read the config.json file
 			std::ifstream configFile("/sdcard/BMBFData/config.json");
-			ASSERT_VOID(configFile.good(), m_Path, verbos);
+			ASSERT_VOID(configFile.good(), GetFileName(m_Path), verbos);
 
 			std::stringstream configJson;
 			configJson << configFile.rdbuf();
@@ -622,10 +605,9 @@ namespace ModloaderUtils
 			{
 				std::string tmpDir = GetTempDir(m_Path);
 
-				std::system(string_format("rm -r \"%s\"", tmpDir.c_str()).c_str());
 				std::system(string_format("mkdir -p \"%s\"", tmpDir.c_str()).c_str());
 
-				std::system(string_format("unzip \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), m_CoverImage.c_str(), tmpDir.c_str()).c_str());
+				std::system(string_format("unzip -o \"%s\" \"%s\" -d \"%s\"", m_Path.c_str(), m_CoverImage.c_str(), tmpDir.c_str()).c_str());
 
 				std::system(string_format("mv -f \"%s/%s\" \"sdcard/BMBFData/Mods/%s_%s\"", tmpDir.c_str(), m_CoverImage.c_str(), displayName.c_str(), m_CoverImage.c_str()).c_str());
 
@@ -678,6 +660,15 @@ namespace ModloaderUtils
 			out.close();
 
 			getLogger().info("Saved!");
+		}
+
+		static void CollectAppPackageId()
+		{
+			if (AppPackageId == "")
+			{
+				JNIEnv *env = JNIUtils::GetJNIEnv();
+				AppPackageId = JNIUtils::ToString(env, JNIUtils::GetPackageName(env));
+			}
 		}
 
 		std::string m_Name;
