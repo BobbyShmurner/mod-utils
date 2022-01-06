@@ -110,7 +110,7 @@ namespace ModloaderUtils
 	class QMod
 	{
 	public:
-		inline static std::vector<QMod *>* DownloadedQMods = new std::vector<QMod*>();
+		inline static std::unordered_map<std::string, QMod*>* DownloadedQMods = new std::unordered_map<std::string, QMod*>();
 
 		QMod(std::string fileDir, bool verbos = true)
 		{
@@ -163,7 +163,7 @@ namespace ModloaderUtils
 			// Attempt to load BMBF Specific Data
 			CollectBMBFData(verbos);
 
-			DownloadedQMods->push_back(this);
+			DownloadedQMods->insert({this->m_Id, this});
 		}
 
 		void Install(std::vector<std::string> *installedInBranch = new std::vector<std::string>())
@@ -237,13 +237,12 @@ namespace ModloaderUtils
  
 		const inline bool Installed() { return m_Installed; }
 		const inline bool Uninstallable() { return m_Uninstallable; }
- 
-		const inline bool IsDownloaded() {
-			for (QMod* qmod : *DownloadedQMods) {
-				if (qmod->m_Id == m_Id) return true;
-			}
 
-			return false;
+		 static QMod* GetDownloadedQMod(std::string id) {
+			auto search = DownloadedQMods->find(id);
+			if (search != DownloadedQMods->end()) return search->second;
+
+			return nullptr;
 		 }
 
 	private:
@@ -404,7 +403,10 @@ namespace ModloaderUtils
 		void UninstallAsync(bool onlyDisable = true, bool verbos = true) {
 			std::unique_lock guard(InstallLock);
 
-			if (!m_Installed) {
+			if (!m_Installed && onlyDisable) {
+				// We only wanna return if we are only tryna disable the mod.
+				// If were tryna remove it, it doesnt matter if its installed or not
+				
 				if (verbos) getLogger().info("Mod \"%s\" is already uninstalled!", m_Id.c_str());
 				return;
 			}
@@ -420,7 +422,8 @@ namespace ModloaderUtils
 			// Only Remove Libs if they are not needed elsewhere
 			for (std::string libFile : *m_LibraryFiles) {
 				bool isUsedElsewhere = false;
-				for (QMod* otherMod : *DownloadedQMods) {
+				for (std::pair<std::string, QMod*> modPair : *DownloadedQMods) {
+					QMod* otherMod = modPair.second;
 					if (otherMod == this || !otherMod->m_Installed) continue;
 
 					if (std::count(otherMod->m_LibraryFiles->begin(), otherMod->m_LibraryFiles->end(), libFile)) {
@@ -447,7 +450,7 @@ namespace ModloaderUtils
 			// If QMod is for Beat Saber, then Remove its BMBF Data
 			if (!strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
 			{
-				if (onlyDisable) UpdateBMBFData(true);
+				if (onlyDisable) UpdateBMBFData(verbos);
 				else RemoveBMBFData(verbos);
 			}
 
@@ -455,7 +458,7 @@ namespace ModloaderUtils
 
 			// This is for actually removing the qmod, not just disabling it
 			if (!onlyDisable) {
-				std::remove(DownloadedQMods->begin(), DownloadedQMods->end(), this);
+				DownloadedQMods->erase(m_Id);
 
 				std::system(string_format("rm -f \"sdcard/BMBFData/Mods/%s_%s\"", GetFileName(m_Path).c_str(), m_CoverImage.c_str()).c_str());
 				std::system(string_format("rm -f \"%s\"", m_Path.c_str()).c_str());
@@ -487,11 +490,11 @@ namespace ModloaderUtils
 			}
 
 			QMod *existing = nullptr;
-			for (QMod *qmod : *DownloadedQMods)
+			for (std::pair<std::string, QMod*> modPair : *DownloadedQMods)
 			{
-				if (qmod->m_Id == dependency.id)
+				if (modPair.first == dependency.id)
 				{
-					existing = qmod;
+					existing = modPair.second;
 				}
 			}
 

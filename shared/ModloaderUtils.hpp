@@ -74,6 +74,36 @@ namespace ModloaderUtils {
 	inline void ToggleMods(std::list<std::string>* mods);
 
 	/**
+	 * @brief Sets the activity of a specific QMod
+	 * 
+	 * @param name The QMod to enable or disable
+	 * @param active Whether to enable or disable the QMod
+	 */
+	inline void SetQModActive(std::string id, bool active);
+
+	/**
+	 * @brief Sets the activity of a list of QMods
+	 * 
+	 * @param mods The list of QMods to enable or disable
+	 * @param active Whether to enable or disable the QMods
+	 */
+	inline void SetQModsActive(std::list<std::string>* ids, bool active);
+
+	/**
+	 * @brief Toggles the activity of a specific QMod to either enabled or diabled
+	 * 
+	 * @param name The QMod to toggle
+	 */
+	inline void ToggleQMod(std::string id);
+
+	/**
+	 * @brief Toggles a list of QMods on or off
+	 * 
+	 * @param mods The list of QMods to be toggled
+	 */
+	inline void ToggleQMods(std::list<std::string>* ids);
+
+	/**
 	 * @brief Checks if a mod is disabled for not
 	 * 
 	 * @param name The mod to check
@@ -328,6 +358,40 @@ namespace ModloaderUtils {
 
 		for (std::string modFileName : *mods) {
 			ToggleMod(modFileName);
+		}
+	}
+
+	inline void SetQModActive(std::string id, bool active) {
+		QMod* qmod = QMod::GetDownloadedQMod(id);
+		if (qmod == nullptr) {
+			getLogger().error("Failed to %s \"%s\"", active ? "activate" : "deactivate", id.c_str());
+			return;
+		}
+
+		if (active) qmod->Install();
+		else qmod->Uninstall();
+	}
+
+	inline void SetQModsActive(std::list<std::string>* ids, bool active) {
+		for (std::string id : *ids) {
+			SetQModActive(id, active);
+		}
+	}
+
+	inline void ToggleQMod(std::string id) {
+		QMod* qmod = QMod::GetDownloadedQMod(id);
+		if (qmod == nullptr) {
+			getLogger().error("Failed totoggle QMod \"%s\"", id.c_str());
+			return;
+		}
+
+		if (qmod->Installed()) qmod->Uninstall();
+		else qmod->Install();
+	}
+
+	inline void ToggleQMods(std::list<std::string>* ids) {
+		for (std::string id : *ids) {
+			ToggleQMod(id);
 		}
 	}
 
@@ -637,7 +701,7 @@ namespace ModloaderUtils {
 
 			if (qmod != nullptr) {
 				getLogger().info("Found QMod File \"%s\"", file.c_str());
-				QMod::DownloadedQMods->push_back(qmod);
+				QMod::DownloadedQMods->insert({qmod->Id(), qmod});
 			}
 		}
 
