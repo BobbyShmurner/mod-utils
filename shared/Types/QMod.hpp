@@ -8,7 +8,6 @@
 #include <memory>
 #include <mutex>
 
-
 #include "cpp-semver/shared/cpp-semver.hpp"
 
 #include "modloader-utils/shared/Types/Dependency.hpp"
@@ -31,7 +30,10 @@
 				getLogger().info("[%s] QMOD ASSERT [%s:%i]: Condition \"%s\" Failed!", name.c_str(), __FILE__, __LINE__, "" #condition); \
                                                                                                                                          \
 			CleanupTempDir(name);                                                                                                        \
-			CleanupTempDir(string_format("Downloads/%s.qmod", name.c_str()), true);                                                           \
+			CleanupTempDir(string_format("Downloads/%s.qmod", name.c_str()), true);                                                      \
+                                                                                                                                         \
+			m_Valid = false;                                                                                                             \
+			return;                                                                                                                      \
 		}                                                                                                                                \
 	}
 
@@ -111,6 +113,7 @@ namespace ModloaderUtils
 	{
 	public:
 		inline static std::unordered_map<std::string, QMod*>* DownloadedQMods = new std::unordered_map<std::string, QMod*>();
+		inline static std::unordered_map<std::string, QMod*>* CoreQMods = new std::unordered_map<std::string, QMod*>();
 
 		QMod(std::string fileDir, bool verbos = true)
 		{
@@ -164,28 +167,18 @@ namespace ModloaderUtils
 			CollectBMBFData(verbos);
 
 			DownloadedQMods->insert({this->m_Id, this});
+			m_Valid = true;
 		}
 
 		void Install(std::vector<std::string> *installedInBranch = new std::vector<std::string>())
 		{
-			CollectAppPackageId();
-
-			if (m_PackageId != AppPackageId)
-			{
-				getLogger().info("Mod \"%s\" Is not built for the package \"%s\", but instead is built for \"%s\"!", m_Id.c_str(), AppPackageId.c_str(), m_PackageId.c_str());
-				return;
-			}
-
-			getLogger().info("Installing mod \"%s\"", m_Id.c_str());
-
-			auto t = std::thread(&QMod::InstallAsync, this, installedInBranch);
-			t.detach();
+			std::optional<std::thread> thread = InstallAsync(installedInBranch);
+			if (thread.has_value()) thread.value().detach();
 		}
 
 		static void InstallFromUrl(std::string fileName, std::string url, std::vector<std::string> *installedInBranch = new std::vector<std::string>())
 		{
 			CollectAppPackageId();
-
 			auto t = std::thread(
 				[fileName, url, installedInBranch]
 				{
@@ -193,29 +186,221 @@ namespace ModloaderUtils
 
 					if (!WebUtils::DownloadFile(fileName, url, downloadFileLoc))
 					{
-						return;
 						CleanupTempDir(string_format("Downloads/%s", fileName.c_str()).c_str(), true);
+						return;
 					}
 
 					// NOTE: There is no clean up here because the cleanup will occur during the install
 					QMod *downloadedMod = new QMod(downloadFileLoc);
-					if (downloadedMod != nullptr)
-						downloadedMod->InstallAsync(installedInBranch);
+
+					std::optional<std::thread> thread = downloadedMod->InstallAsync(installedInBranch);
+					if (thread.has_value()) thread.value().join();
 				});
 			t.detach();
 		}
 
-		void Uninstall(bool onlyDisable = true, bool verbos = true) {
-			// inline threading wasnt working for some reason
-			auto t = std::thread(
-				[onlyDisable, verbos, this]
-				{
-					UninstallAsync(onlyDisable, verbos);
+		void Uninstall(bool onlyDisable = true, bool verbos = true)
+		{
+			std::optional<std::thread> thread = UninstallAsync(onlyDisable, verbos);
+			if (thread.has_value()) thread.value().detach();
+		}
+
+		std::optional<std::thread> InstallAsync(std::vector<std::string> *installedInBranch = new std::vector<std::string>())
+		{
+			if (!m_Valid)
+			{
+				getLogger().info("Mod \"%s\" Is an invalid QMod!", m_Id.c_str());
+				return std::nullopt;
+			}
+
+			CollectAppPackageId();
+			if (m_PackageId != AppPackageId)
+			{
+				getLogger().info("Mod \"%s\" Is not built for the package \"%s\", but instead is built for \"%s\"!", m_Id.c_str(), AppPackageId.c_str(), m_PackageId.c_str());
+				return std::nullopt;
+			}
+
+			getLogger().info("Installing mod \"%s\"", m_Id.c_str());
+
+			return std::thread(
+				[this, installedInBranch] {
+					if (!m_Valid)
+					{
+						getLogger().info("Mod \"%s\" Is an invalid QMod!", m_Id.c_str());
+						return;
+					}
+
+					if (m_Installed)
+					{
+						getLogger().info("Mod \"%s\" Already Installed!", m_Id.c_str());
+						return;
+					}
+
+					// Add to the installed tree so that dependencies further down on us will trigger a recursive install error
+					installedInBranch->push_back(m_Id);
+
+					// We say that the mod is installed now to prevent multiple installs of the same mod If the install fails we can then can say its uninstalled later
+					m_Installed = true;
+
+					for (Dependency dependency : *m_Dependencies)
+					{
+						if (!PrepareDependency(dependency, installedInBranch))
+						{
+							getLogger().error("Failed to install \"%s\" as one of its dependencies (%s) also failed to install", m_Id.c_str(), dependency.id.c_str());
+
+							m_Installed = false;
+							return;
+						}
+					}
+
+					// We only lock now so that the dependencies can install first without issues
+					std::unique_lock guard(InstallLock);
+
+					// Extract QMod so we can move the files
+					ExtractQMod();
+
+					std::string tmpDir = GetTempDir(m_Path);
+					std::string modsExtractionPath = tmpDir + "Mods/";
+					std::string libsExtractionPath = tmpDir + "Libs/";
+					std::string fileCopiesExtractionPath = tmpDir + "FileCopies/";
+
+					// Copy the Mods files to the Mods folder
+					for (std::string mod : *m_ModFiles)
+					{
+						std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/mods/\"", modsExtractionPath.c_str(), mod.c_str()).c_str());
+					}
+
+					// Copy the Libs files to the Libs folder
+					for (std::string lib : *m_LibraryFiles)
+					{
+						std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/libs/\"", libsExtractionPath.c_str(), lib.c_str()).c_str());
+					}
+
+					// Copy the File Copies to their respective destination folders
+					for (FileCopy fileCopy : *m_FileCopies)
+					{
+						std::string desPath = fileCopy.destination.substr(0, fileCopy.destination.find_last_of("/\\"));
+
+						std::system(string_format("mkdir -p \"%s\"", desPath.c_str()).c_str());
+						std::remove(fileCopy.destination.c_str());
+
+						std::system(string_format("mv -f \"%s%s\" \"%s\"", fileCopiesExtractionPath.c_str(), fileCopy.name.c_str(), fileCopy.destination.c_str()).c_str());
+					}
+
+					installedInBranch->erase(std::remove(installedInBranch->begin(), installedInBranch->end(), m_Id), installedInBranch->end());
+
+					// If QMod is for Beat Saber, then Update its BMBF Data
+					if (!strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
+					{
+						UpdateBMBFData();
+					}
+
+					getLogger().info("Successfully Installed \"%s\"!", m_Id.c_str());
+					CleanupTempDir(GetFileName(m_Path));
 				}
 			);
-			t.detach();
 		}
- 
+
+		std::optional<std::thread> UninstallAsync(bool onlyDisable = true, bool verbos = true)
+		{
+			if (!m_Valid)
+			{
+				getLogger().info("Failed to uninstall \"%s\", Mod Is an invalid QMod!", m_Id.c_str());
+				return std::nullopt;
+			}
+
+			if (!m_Uninstallable) {
+				getLogger().warning("\"%s\" is marked as not being Uninstallable, this probably means you are uninstalling a core mod. Be careful!", m_Id.c_str());
+			}
+
+			return std::thread(
+				[this, onlyDisable, verbos] {
+					std::unique_lock guard(InstallLock);
+
+					if (!m_Installed && onlyDisable)
+					{
+						// We only wanna return if we are only tryna disable the mod.
+						// If were tryna remove it, it doesnt matter if its installed or not
+
+						if (verbos)
+							getLogger().info("Mod \"%s\" is already uninstalled!", m_Id.c_str());
+						return;
+					}
+
+					if (verbos)
+						getLogger().info("Uninstalling \"%s\"", m_Id.c_str());
+
+					// Remove mod SOs so that the mod will not load
+					for (std::string modFile : *m_ModFiles)
+					{
+						if (verbos)
+							getLogger().info("Removing Mod file \"%s\" from mod \"%s\"", modFile.c_str(), m_Id.c_str());
+						std::system(string_format("rm -f \"/sdcard/Android/data/com.beatgames.beatsaber/files/mods/%s\"", modFile.c_str()).c_str());
+					}
+
+					// Only Remove Libs if they are not needed elsewhere
+					for (std::string libFile : *m_LibraryFiles)
+					{
+						bool isUsedElsewhere = false;
+						for (std::pair<std::string, QMod *> modPair : *DownloadedQMods)
+						{
+							QMod *otherMod = modPair.second;
+							if (otherMod == this || !otherMod->m_Installed)
+								continue;
+
+							if (std::count(otherMod->m_LibraryFiles->begin(), otherMod->m_LibraryFiles->end(), libFile))
+							{
+								if (verbos)
+									getLogger().info("Lib File \"%s\" is used elsewhere, not removing", libFile.c_str());
+								isUsedElsewhere = true;
+								break;
+							}
+						}
+
+						if (!isUsedElsewhere)
+						{
+							if (verbos)
+								getLogger().info("Removing Library file \"%s\" from mod \"%s\"", libFile.c_str(), m_Id.c_str());
+							std::system(string_format("rm -f \"/sdcard/Android/data/com.beatgames.beatsaber/files/libs/%s\"", libFile.c_str()).c_str());
+						}
+					}
+
+					// Remove file copies
+					for (FileCopy fileCopy : *m_FileCopies)
+					{
+						if (verbos)
+							getLogger().info("Removing copied file \"%s\" from mod \"%s\"", fileCopy.destination.c_str(), m_Id.c_str());
+						std::system(string_format("rm -f \"%s\"", fileCopy.destination.c_str()).c_str());
+					}
+
+					m_Installed = false;
+
+					// If QMod is for Beat Saber, then Remove its BMBF Data
+					if (!strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
+					{
+						if (onlyDisable)
+							UpdateBMBFData(verbos);
+						else
+							RemoveBMBFData(verbos);
+					}
+
+					CleanupTempDir(GetFileName(m_Path));
+
+					// This is for actually removing the qmod, not just disabling it
+					if (!onlyDisable)
+					{
+						DownloadedQMods->erase(m_Id);
+
+						std::system(string_format("rm -f \"sdcard/BMBFData/Mods/%s_%s\"", GetFileName(m_Path).c_str(), m_CoverImage.c_str()).c_str());
+						std::system(string_format("rm -f \"%s\"", m_Path.c_str()).c_str());
+					}
+
+					if (verbos)
+						getLogger().info("Successfully Uninstalled \"%s\"!", m_Id.c_str());
+				}
+			);
+		}
+
 		const inline std::string Name() { return m_Name; }
 		const inline std::string Id() { return m_Id; }
 		const inline std::string Description() { return m_Description; }
@@ -223,27 +408,44 @@ namespace ModloaderUtils
 		const inline std::string Porter() { return m_Porter; }
 		const inline std::string Version() { return m_Version; }
 		const inline std::string CoverImage() { return m_CoverImage; }
- 
+
 		const inline std::string PackageId() { return m_PackageId; }
 		const inline std::string PackageVersion() { return m_PackageVersion; }
- 
+
 		const inline std::vector<std::string> ModFiles() { return *m_ModFiles; }
 		const inline std::vector<std::string> LibraryFiles() { return *m_LibraryFiles; }
 		const inline std::vector<Dependency> Dependencies() { return *m_Dependencies; }
 		const inline std::vector<FileCopy> FileCopies() { return *m_FileCopies; }
- 
+
 		const inline std::string Path() { return m_Path; }
 		const inline std::string CoverImageFilename() { return m_CoverImageFilename; }
- 
+
 		const inline bool Installed() { return m_Installed; }
 		const inline bool Uninstallable() { return m_Uninstallable; }
+		const inline bool Valid() { return m_Valid; }
 
-		 static QMod* GetDownloadedQMod(std::string id) {
+		const inline std::string FileName() { return GetFileName(m_Path, false, true); }
+
+		static QMod *GetDownloadedQMod(std::string id)
+		{
 			auto search = DownloadedQMods->find(id);
-			if (search != DownloadedQMods->end()) return search->second;
+			if (search != DownloadedQMods->end())
+				return search->second;
 
 			return nullptr;
-		 }
+		}
+
+		const static bool IsCoreMod(QMod* qmod) {
+			return qmod->IsCoreMod();
+		}
+
+		const bool IsCoreMod() {
+			for (std::pair<std::string, QMod*> coreQModPair : *CoreQMods) {
+				if (coreQModPair.first == m_Id) return true;
+			}
+
+			return false;
+		}
 
 	private:
 		inline static std::mutex InstallLock;
@@ -254,7 +456,8 @@ namespace ModloaderUtils
 		{
 			if (strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
 			{
-				getLogger().info("Failed to collect BMBF Data, QMod isn't for Beat Saber! (PackageId: %s)", m_PackageId.c_str());
+				if (verbos)
+					getLogger().info("Failed to collect BMBF Data, QMod isn't for Beat Saber! (PackageId: %s)", m_PackageId.c_str());
 				return;
 			}
 
@@ -330,143 +533,6 @@ namespace ModloaderUtils
 			}
 		}
 
-		void InstallAsync(std::vector<std::string> *installedInBranch)
-		{
-			std::unique_lock guard(InstallLock);
-			
-			if (m_Installed)
-			{
-				getLogger().info("Mod \"%s\" Already Installed!", m_Id.c_str());
-				return;
-			}
-
-			// Add to the installed tree so that dependencies further down on us will trigger a recursive install error
-			installedInBranch->push_back(m_Id);
-
-			// We say that the mod is installed now to prevent multiple installs of the same mod If the install fails we can then can say its uninstalled later
-			m_Installed = true;
-
-			for (Dependency dependency : *m_Dependencies)
-			{
-				if (!PrepareDependency(dependency, installedInBranch))
-				{
-					getLogger().error("Failed to install \"%s\" as one of its dependecies (%s) also failed to install", m_Id.c_str(), dependency.id.c_str());
-
-					m_Installed = false;
-					return;
-				}
-			}
-
-			// Extract QMod so we can move the files
-			ExtractQMod();
-
-			std::string tmpDir = GetTempDir(m_Path);
-			std::string modsExtractionPath = tmpDir + "Mods/";
-			std::string libsExtractionPath = tmpDir + "Libs/";
-			std::string fileCopiesExtractionPath = tmpDir + "FileCopies/";
-
-			// Copy the Mods files to the Mods folder
-			for (std::string mod : *m_ModFiles)
-			{
-				std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/mods/\"", modsExtractionPath.c_str(), mod.c_str()).c_str());
-			}
-
-			// Copy the Libs files to the Libs folder
-			for (std::string lib : *m_LibraryFiles)
-			{
-				std::system(string_format("mv -f \"%s%s\" \"/sdcard/Android/data/com.beatgames.beatsaber/files/libs/\"", libsExtractionPath.c_str(), lib.c_str()).c_str());
-			}
-
-			// Copy the File Copies to their respective destination folders
-			for (FileCopy fileCopy : *m_FileCopies)
-			{
-				std::string desPath = fileCopy.destination.substr(0, fileCopy.destination.find_last_of("/\\"));
-
-				std::system(string_format("mkdir -p \"%s\"", desPath.c_str()).c_str());
-				std::remove(fileCopy.destination.c_str());
-
-				std::system(string_format("mv -f \"%s%s\" \"%s\"", fileCopiesExtractionPath.c_str(), fileCopy.name.c_str(), fileCopy.destination.c_str()).c_str());
-			}
-
-			installedInBranch->erase(std::remove(installedInBranch->begin(), installedInBranch->end(), m_Id), installedInBranch->end());
-
-			// If QMod is for Beat Saber, then Update its BMBF Data
-			if (!strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
-			{
-				UpdateBMBFData();
-			}
-
-			getLogger().info("Successfully Installed \"%s\"!", m_Id.c_str());
-			CleanupTempDir(GetFileName(m_Path));
-		}
-
-		void UninstallAsync(bool onlyDisable = true, bool verbos = true) {
-			std::unique_lock guard(InstallLock);
-
-			if (!m_Installed && onlyDisable) {
-				// We only wanna return if we are only tryna disable the mod.
-				// If were tryna remove it, it doesnt matter if its installed or not
-				
-				if (verbos) getLogger().info("Mod \"%s\" is already uninstalled!", m_Id.c_str());
-				return;
-			}
-
-			if (verbos) getLogger().info("Uninstalling \"%s\"", m_Id.c_str());
-
-			// Remove mod SOs so that the mod will not load
-			for (std::string modFile : *m_ModFiles) {
-				if (verbos) getLogger().info("Removing Mod file \"%s\" from mod \"%s\"", modFile.c_str(), m_Id.c_str());
-				std::system(string_format("rm -f \"/sdcard/Android/data/com.beatgames.beatsaber/files/mods/%s\"", modFile.c_str()).c_str());
-			}
-
-			// Only Remove Libs if they are not needed elsewhere
-			for (std::string libFile : *m_LibraryFiles) {
-				bool isUsedElsewhere = false;
-				for (std::pair<std::string, QMod*> modPair : *DownloadedQMods) {
-					QMod* otherMod = modPair.second;
-					if (otherMod == this || !otherMod->m_Installed) continue;
-
-					if (std::count(otherMod->m_LibraryFiles->begin(), otherMod->m_LibraryFiles->end(), libFile)) {
-						if (verbos) getLogger().info("Lib File \"%s\" is used elsewhere, not removing", libFile.c_str());
-						isUsedElsewhere = true;
-						break;
-					}
-				}
-
-				if (!isUsedElsewhere) {
-					if (verbos) getLogger().info("Removing Library file \"%s\" from mod \"%s\"", libFile.c_str(), m_Id.c_str());
-					std::system(string_format("rm -f \"/sdcard/Android/data/com.beatgames.beatsaber/files/libs/%s\"", libFile.c_str()).c_str());
-				}
-			}
-
-			// Remove file copies
-			for (FileCopy fileCopy : *m_FileCopies) {
-				if (verbos) getLogger().info("Removing copied file \"%s\" from mod \"%s\"", fileCopy.destination.c_str(), m_Id.c_str());
-				std::system(string_format("rm -f \"%s\"", fileCopy.destination.c_str()).c_str());
-			}
-
-			m_Installed = false;
-
-			// If QMod is for Beat Saber, then Remove its BMBF Data
-			if (!strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
-			{
-				if (onlyDisable) UpdateBMBFData(verbos);
-				else RemoveBMBFData(verbos);
-			}
-
-			CleanupTempDir(GetFileName(m_Path));
-
-			// This is for actually removing the qmod, not just disabling it
-			if (!onlyDisable) {
-				DownloadedQMods->erase(m_Id);
-
-				std::system(string_format("rm -f \"sdcard/BMBFData/Mods/%s_%s\"", GetFileName(m_Path).c_str(), m_CoverImage.c_str()).c_str());
-				std::system(string_format("rm -f \"%s\"", m_Path.c_str()).c_str());
-			}
-
-			if (verbos) getLogger().info("Successfully Uninstalled \"%s\"!", m_Id.c_str());
-		}
-
 		bool PrepareDependency(Dependency dependency, std::vector<std::string> *installedInBranch)
 		{
 			getLogger().info("Preparing dependency of %s version %s", dependency.id.c_str(), dependency.version.c_str());
@@ -490,7 +556,7 @@ namespace ModloaderUtils
 			}
 
 			QMod *existing = nullptr;
-			for (std::pair<std::string, QMod*> modPair : *DownloadedQMods)
+			for (std::pair<std::string, QMod *> modPair : *DownloadedQMods)
 			{
 				if (modPair.first == dependency.id)
 				{
@@ -507,7 +573,9 @@ namespace ModloaderUtils
 					if (!existing->m_Installed)
 					{
 						getLogger().info("Installing Dependency...");
-						existing->Install(installedInBranch);
+
+						std::optional<std::thread> thread = existing->InstallAsync(installedInBranch);
+						if (thread.has_value()) thread.value().join();
 					}
 
 					return true;
@@ -569,7 +637,9 @@ namespace ModloaderUtils
 
 			// Everything's looking good, time to install!
 			// NOTE: There is no clean up here because the cleanup will occur during the install
-			downloadedDependency->Install(installedInBranch);
+			std::optional<std::thread> thread = downloadedDependency->InstallAsync(installedInBranch);
+			if (thread.has_value()) thread.value().join();
+
 			return true;
 		}
 
@@ -595,7 +665,8 @@ namespace ModloaderUtils
 			// Prevents multiple threads writing to the file at the same time
 			std::unique_lock<std::mutex> guard(BmbfConfigLock);
 
-			getLogger().info("Updating BMBF Info for \"%s\"", m_Id.c_str());
+			if (verbos)
+				getLogger().info("Updating BMBF Info for \"%s\"", m_Id.c_str());
 
 			// Read the config.json file
 			std::ifstream configFile("/sdcard/BMBFData/config.json");
@@ -645,7 +716,8 @@ namespace ModloaderUtils
 					continue;
 				foundMod = true;
 
-				getLogger().info("Found existing BMBF Data for \"%s\", Updating It...", m_Id.c_str());
+				if (verbos)
+					getLogger().info("Found existing BMBF Data for \"%s\", Updating It...", m_Id.c_str());
 
 				mod.SetObject();
 				UpdateBMBFJSONData(mod, document.GetAllocator());
@@ -654,7 +726,8 @@ namespace ModloaderUtils
 			// BMBF Data could not be found, create the object first
 			if (!foundMod)
 			{
-				getLogger().info("No BMBF Data Found for \"%s\"! Creating It Now...", m_Id.c_str());
+				if (verbos)
+					getLogger().info("No BMBF Data Found for \"%s\"! Creating It Now...", m_Id.c_str());
 
 				rapidjson::Value modDataObject = rapidjson::Value(rapidjson::Type::kObjectType);
 
@@ -664,7 +737,8 @@ namespace ModloaderUtils
 				mods.PushBack(modDataObject, document.GetAllocator());
 			}
 
-			getLogger().info("Updated BMBF Data for \"%s\"! Saving...", m_Id.c_str());
+			if (verbos)
+				getLogger().info("Updated BMBF Data for \"%s\"! Saving...", m_Id.c_str());
 
 			// Save To Buffer
 
@@ -679,14 +753,17 @@ namespace ModloaderUtils
 			out << buffer.GetString();
 			out.close();
 
-			getLogger().info("Saved BMBF Data for \"%s\"!", m_Id.c_str());
+			if (verbos)
+				getLogger().info("Saved BMBF Data for \"%s\"!", m_Id.c_str());
 		}
 
-		void RemoveBMBFData(bool verbos = true) {
+		void RemoveBMBFData(bool verbos = true)
+		{
 			// Prevents multiple threads writing to the file at the same time
 			std::unique_lock<std::mutex> guard(BmbfConfigLock);
 
-			if (verbos) getLogger().info("Removing BMBF Info for \"%s\"", m_Id.c_str());
+			if (verbos)
+				getLogger().info("Removing BMBF Info for \"%s\"", m_Id.c_str());
 
 			// Read the config.json file
 			std::ifstream configFile("/sdcard/BMBFData/config.json");
@@ -711,13 +788,15 @@ namespace ModloaderUtils
 				if (id != m_Id)
 					continue;
 
-				if (verbos) getLogger().info("Found BMBF Data for \"%s\", Removing It...", m_Id.c_str());
+				if (verbos)
+					getLogger().info("Found BMBF Data for \"%s\", Removing It...", m_Id.c_str());
 
 				mods.Erase(mods.Begin() + i);
 				break;
 			}
 
-			if (verbos) getLogger().info("Removed BMBF Data for \"%s\"! Saving...", m_Id.c_str());
+			if (verbos)
+				getLogger().info("Removed BMBF Data for \"%s\"! Saving...", m_Id.c_str());
 
 			// Save To Buffer
 
@@ -732,7 +811,8 @@ namespace ModloaderUtils
 			out << buffer.GetString();
 			out.close();
 
-			if (verbos) getLogger().info("Saved BMBF Data for \"%s\"!", m_Id.c_str());
+			if (verbos)
+				getLogger().info("Saved BMBF Data for \"%s\"!", m_Id.c_str());
 		}
 
 		static void CollectAppPackageId()
@@ -815,6 +895,8 @@ namespace ModloaderUtils
 		std::vector<std::string> *m_LibraryFiles;
 		std::vector<Dependency> *m_Dependencies;
 		std::vector<FileCopy> *m_FileCopies;
+
+		bool m_Valid;
 
 		// BMBF Stuff
 

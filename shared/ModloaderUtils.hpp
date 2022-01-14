@@ -44,6 +44,27 @@ namespace ModloaderUtils {
 	inline std::list<std::string> GetDirContents(std::string dirPath);
 
 	/**
+	 * @brief Get all of the QMods that are currently downloaded
+	 * 
+	 * @return A List of all downloaded QMods 
+	 */
+	inline std::unordered_map<std::string, ModloaderUtils::QMod *>* GetDownloadedQMods();
+
+	/**
+	 * @brief Get all of the QMods that are currently installed
+	 * 
+	 * @return A List of all installed QMods 
+	 */
+	inline std::unordered_map<std::string, ModloaderUtils::QMod *>* GetInstalledQMods();
+
+	/**
+	 * @brief Get all of the QMods that are currently uninstalled
+	 * 
+	 * @return A List of all uninstalled QMods 
+	 */
+	inline std::unordered_map<std::string, ModloaderUtils::QMod *>* GetUninstalledQMods();
+
+	/**
 	 * @brief Sets the activity of a specific mod
 	 * 
 	 * @param name The mod to enable or disable
@@ -76,10 +97,10 @@ namespace ModloaderUtils {
 	/**
 	 * @brief Sets the activity of a specific QMod
 	 * 
-	 * @param name The QMod to enable or disable
+	 * @param qmod The QMod to enable or disable
 	 * @param active Whether to enable or disable the QMod
 	 */
-	inline void SetQModActive(std::string id, bool active);
+	inline void SetQModActive(QMod* qmod, bool active);
 
 	/**
 	 * @brief Sets the activity of a list of QMods
@@ -87,21 +108,21 @@ namespace ModloaderUtils {
 	 * @param mods The list of QMods to enable or disable
 	 * @param active Whether to enable or disable the QMods
 	 */
-	inline void SetQModsActive(std::list<std::string>* ids, bool active);
+	inline void SetQModsActive(std::list<QMod*>* qmods, bool active);
 
 	/**
 	 * @brief Toggles the activity of a specific QMod to either enabled or diabled
 	 * 
 	 * @param name The QMod to toggle
 	 */
-	inline void ToggleQMod(std::string id);
+	inline void ToggleQMod(QMod* qmod);
 
 	/**
 	 * @brief Toggles a list of QMods on or off
 	 * 
 	 * @param mods The list of QMods to be toggled
 	 */
-	inline void ToggleQMods(std::list<std::string>* ids);
+	inline void ToggleQMods(std::list<QMod*>* qmods);
 
 	/**
 	 * @brief Checks if a mod is disabled for not
@@ -321,6 +342,34 @@ namespace ModloaderUtils {
 		return files;
 	}
 
+	std::unordered_map<std::string, ModloaderUtils::QMod *>* GetDownloadedQMods() {
+		Init();
+
+		return QMod::DownloadedQMods;
+	}
+
+	std::unordered_map<std::string, ModloaderUtils::QMod *>* GetInstalledQMods() {
+		Init();
+
+		std::unordered_map<std::string, ModloaderUtils::QMod *>* installedQMods = new std::unordered_map<std::string, ModloaderUtils::QMod *>();
+		for (std::pair<std::string, QMod*> qmodPair : *QMod::DownloadedQMods) {
+			if (qmodPair.second->Installed()) installedQMods->insert(qmodPair);
+		}
+
+		return installedQMods;
+	}
+
+	std::unordered_map<std::string, ModloaderUtils::QMod *>* GetUninstalledQMods() {
+		Init();
+
+		std::unordered_map<std::string, ModloaderUtils::QMod *>* uninstalledQMods = new std::unordered_map<std::string, ModloaderUtils::QMod *>();
+		for (std::pair<std::string, QMod*> qmodPair : *QMod::DownloadedQMods) {
+			if (!qmodPair.second->Installed()) uninstalledQMods->insert(qmodPair);
+		}
+
+		return uninstalledQMods;
+	}
+
 	void SetModActive(std::string name, bool active) {
 		getLogger().info("%s mod \"%s\"", active ? "Enabling" : "Disabling", GetLibName(name).c_str());
 
@@ -361,37 +410,40 @@ namespace ModloaderUtils {
 		}
 	}
 
-	inline void SetQModActive(std::string id, bool active) {
-		QMod* qmod = QMod::GetDownloadedQMod(id);
-		if (qmod == nullptr) {
-			getLogger().error("Failed to %s \"%s\"", active ? "activate" : "deactivate", id.c_str());
-			return;
-		}
+	void SetQModActive(QMod* qmod, bool active) {
+		getLogger().info("%s QMod \"%s\"", active ? "Enabling" : "Disabling", qmod->Name().c_str());
 
 		if (active) qmod->Install();
 		else qmod->Uninstall();
 	}
 
-	inline void SetQModsActive(std::list<std::string>* ids, bool active) {
-		for (std::string id : *ids) {
-			SetQModActive(id, active);
+	void SetQModsActive(std::list<QMod*>* qmods, bool active) {
+		getLogger().info("%s a list of QMods", active ? "Enabling" : "Disabling");
+
+		std::vector<std::optional<std::thread>> threads;
+
+		for (QMod* qmod : *qmods) {
+			if (active) threads.emplace_back(qmod->InstallAsync());
+			else threads.emplace_back(qmod->UninstallAsync());
+		}
+
+		for (auto& thread : threads) {
+			if (thread.has_value()) thread.value().join();
 		}
 	}
 
-	inline void ToggleQMod(std::string id) {
-		QMod* qmod = QMod::GetDownloadedQMod(id);
-		if (qmod == nullptr) {
-			getLogger().error("Failed totoggle QMod \"%s\"", id.c_str());
-			return;
+	void ToggleQMods(std::list<QMod*>* qmods) {
+		getLogger().info("Toggling a list of QMods");
+
+		std::vector<std::optional<std::thread>> threads;
+
+		for (QMod* qmod : *qmods) {
+			if (!qmod->Installed()) threads.emplace_back(qmod->InstallAsync());
+			else threads.emplace_back(qmod->UninstallAsync());
 		}
 
-		if (qmod->Installed()) qmod->Uninstall();
-		else qmod->Install();
-	}
-
-	inline void ToggleQMods(std::list<std::string>* ids) {
-		for (std::string id : *ids) {
-			ToggleQMod(id);
+		for (auto& thread : threads) {
+			if (thread.has_value()) thread.value().join();
 		}
 	}
 
@@ -549,10 +601,10 @@ namespace ModloaderUtils {
 		jstring packageName = JNIUtils::GetPackageName(env);
 
 		// Get Activity
-		jobject appActivity = JNIUtils::GetAppActivity(env);
+		jobject appContext = JNIUtils::GetAppContext(env);
 
 		// Get Package Manager
-		CALL_JOBJECT_METHOD(env, packageManager, appActivity, "getPackageManager", "()Landroid/content/pm/PackageManager;");
+		CALL_JOBJECT_METHOD(env, packageManager, appContext, "getPackageManager", "()Landroid/content/pm/PackageManager;");
 
 		// Get Intent
 		CALL_JOBJECT_METHOD(env, intent, packageManager, "getLaunchIntentForPackage", "(Ljava/lang/String;)Landroid/content/Intent;", packageName);
@@ -568,7 +620,7 @@ namespace ModloaderUtils {
 		CALL_STATIC_JOBJECT_METHOD(env, restartIntent, intentClass, "makeRestartActivityTask", "(Landroid/content/ComponentName;)Landroid/content/Intent;", componentName);
 
 		// Restart Game
-		CALL_VOID_METHOD(env, appActivity, "startActivity", "(Landroid/content/Intent;)V", restartIntent);
+		CALL_VOID_METHOD(env, appContext, "startActivity", "(Landroid/content/Intent;)V", restartIntent);
 
 		GET_JCLASS(env, processClass, "android/os/Process");
 
@@ -620,13 +672,28 @@ namespace ModloaderUtils {
 			for (rapidjson::SizeType i = 0; i < coreModsList.Size(); i++) { // rapidjson uses SizeType instead of size_t.
 				const rapidjson::Value& coreModInfo = coreModsList[i];
 
+				std::string id = coreModInfo["id"].GetString();
 				std::string fileName = GetFileName(coreModInfo["id"].GetString());
 
 				m_CoreMods->emplace_front(fileName);
 				getLogger().info("Found Core mod %s", fileName.c_str());
+
+				bool foundQMod = false;
+				for (std::pair<std::string, QMod*> qmodPair : *QMod::DownloadedQMods) {
+					if (qmodPair.second->Id() == id) {
+						foundQMod = true;
+						QMod::CoreQMods->insert(qmodPair);
+						break;
+					}
+				}
+
+				if (!foundQMod) {
+					getLogger().warning("Warning! No downloaded QMod found for core mod \"%s\". Attempting to download now...", id.c_str());
+					QMod::InstallFromUrl(coreModInfo["filename"].GetString(), coreModInfo["downloadLink"].GetString());
+				}
 			}
 		} else {
-			getLogger().info("ERROR! No Core Mods Found For This Version!");
+			getLogger().error("ERROR! No Core Mods Found For This Version!");
 		}
 
 		getLogger().info("Finished Collecting Core Mods!");
@@ -699,7 +766,7 @@ namespace ModloaderUtils {
 			std::string filePath = m_QModPath + file;
 			QMod* qmod = new QMod(filePath, false);
 
-			if (qmod != nullptr) {
+			if (qmod->Valid()) {
 				getLogger().info("Found QMod File \"%s\"", file.c_str());
 				QMod::DownloadedQMods->insert({qmod->Id(), qmod});
 			}
@@ -736,6 +803,8 @@ namespace ModloaderUtils {
 	}
 
 	void Init() {
+		// ORDER MATTERS!!! DONT FUCK WITH IT!!!
+
 		if (m_HasInitialized) return;
 		m_HasInitialized = true;
 
@@ -753,8 +822,8 @@ namespace ModloaderUtils {
 		CollectLoadedMods();
 		CollectModVersions();
 		CollectOddLibs();
-		CollectCoreMods();
 
 		CollectDownloadedQMods();
+		CollectCoreMods();
 	}
 };
